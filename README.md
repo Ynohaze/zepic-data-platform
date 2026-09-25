@@ -2,6 +2,42 @@
 
 DE flagship — Phase 1.2: a local PostgreSQL operational source.
 
+## Phase 1.3 initial data
+
+Use Python 3.10+ and run from the repository root:
+
+```sh
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python scripts/generate_initial_data.py
+docker compose up -d --wait
+.venv/bin/python scripts/generate_initial_data.py --apply
+```
+
+The first invocation previews data without connecting to PostgreSQL. `--apply`
+loads `.env` (existing environment variables take precedence), checks all nine
+tables are empty and inserts all four initial datasets in one transaction.
+Repeated initialization is rejected without changing existing data. There is
+no automatic reset or overwrite. Database-assigned IDs need not start at 1.
+
+Edit `config/initial_data.json`, or pass `--config /path/to/config.json`:
+
+- Default: 100 synthetic customers (70 standard, 20 silver, 10 gold), 20 active
+  products, 5 available machines and one inventory row per product.
+- Product names, prices and batch sizes are illustrative industrial-part data,
+  not market prices. Prices are decimal strings, never floating-point values.
+- Seed 42 shuffles customer tiers. Seed + 1 independently chooses inventory
+  from 0, 1, 3 or 5 product batches, with equal probability per choice.
+- Start time defaults to `2026-01-01T00:00:00+00:00`; all initial created_at and
+  updated_at values use this instant. The date is a configurable simulation origin.
+- Reproduction assumes unchanged configuration, product order, generator code
+  and Python version. Business values are repeatable; database IDs are not fixed.
+- Orders, production and maintenance records remain empty for later phases.
+
+Run generator tests with `.venv/bin/python -m unittest discover -s tests -v`.
+The Phase 1.2 `database/verify.sql` is for a separate disposable empty database;
+do not run it on this initialized dataset.
+
 ## Start
 
 Requires Docker Desktop (or Docker Engine) running with Compose support.

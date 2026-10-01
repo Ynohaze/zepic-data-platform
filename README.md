@@ -1,6 +1,57 @@
 # Zepic Data Platform
 
-DE flagship — local PostgreSQL, initial master data and daily order simulation.
+DE flagship — local PostgreSQL with order, production and fulfillment simulation.
+
+## Phase 1.5 production and fulfillment
+
+After generating a day's orders, preview then apply its production cycle:
+
+```sh
+.venv/bin/python scripts/run_production_planning.py --date 2026-01-03
+.venv/bin/python scripts/run_production_planning.py --date 2026-01-03 --apply
+```
+
+The example is for a fresh simulation at that date. This checkout has already
+completed January 3: 14 production orders/runs, 3,200 units produced, 148 orders
+shipped and 82 still pending. Next run daily operations for January 4, then
+production for January 4. Do not replay the January 3 apply command.
+
+Rules (`config/production.json`, overridable with `--config`):
+
+- At 18:00 UTC, aggregate only confirmed demand by product, subtract current
+  inventory and create one production order per positive shortage. Planned
+  quantity is `ceil(shortage * (1 + buffer_rate) / batch_multiple) * batch_multiple`.
+  Default buffer is 5%; snapshot it and the product batch size on the production order.
+- Available machines with no active maintenance are deterministically shuffled
+  using seed + date, then assigned in round-robin waves. Each run lasts 10 simulated
+  minutes by default, independent of quantity: this is an MVP timing assumption,
+  not a throughput/capacity model. First runs start at 18:01. A machine may execute
+  several successive runs, but its recorded intervals never overlap.
+- One run per production order; all runs succeed with actual quantity equal to
+  planned quantity. Orders go planned → released → completed, runs go running →
+  completed, and output enters inventory. Machine availability is not changed.
+- One minute after the last run (18:01 if none), try confirmed sales orders oldest
+  first, breaking ties by order_id. Ship only if every item is available. Otherwise
+  consume nothing for that order and continue trying the others. Deduction and
+  the shipped header update share the same transaction; items/prices stay unchanged.
+- Reject missing inventory, inactive products requiring production, shortages
+  without machines, unfinished prior production, dates other than the latest
+  generated order date, future source timestamps or schedules crossing midnight.
+  Existing stock can be shipped without any available machines.
+- Preview is read-only; apply locks the relevant tables and commits the whole
+  cycle atomically. Intermediate planned/released/running states are executed
+  inside the transaction, so outside readers see the committed final states only.
+  These are state tables, not an event history or CDC stream.
+- Existing production orders or shipment timestamps reject repeat execution.
+  An empty-demand no-op writes no marker and may be safely repeated. Guards
+  assume retained simulation records, not manually deleted or edited history.
+- Random failures, yield loss, maintenance generation, cancellation and partial
+  shipments remain out of scope. Tests exercise insufficient stock and forced
+  database failures; they do not add random failed-run generation.
+
+The existing test commands below include production coverage. Database tests
+also verify rollback, no double production under concurrency, preview without
+sequence changes, nonoverlapping machine runs and per-product inventory balance.
 
 ## Phase 1.4 daily orders
 
@@ -14,8 +65,8 @@ After Phase 1.3 initialization, preview then apply each UTC day in order:
 
 These are fresh-database examples. This local checkout has already applied
 January 2 and 3; its next order-generation date is January 4. Existing dates
-are rejected rather than appended again. Phase 1.5 will process the confirmed
-demand before the longer multi-day simulation is introduced.
+are rejected rather than appended again. Run the production cycle after each
+day's orders; the multi-day orchestrator belongs to Phase 1.6.
 
 Configuration: `config/daily_operations.json` (`--config` accepts another path).
 

@@ -1,4 +1,43 @@
-# Zepic — Phase 1.4 handoff
+# Zepic — Phase 1.5 handoff
+
+## Phase 1.5 implementation and validation — 2026-10-01
+
+Production and fulfillment are implemented in `scripts/run_production_planning.py`
+with `config/production.json`. No schema changes. At 18:00 UTC, confirmed demand
+minus inventory determines positive shortages; apply 5% buffer and round up to
+the snapshotted batch multiple. One production order and one successful run per
+short product; actual output equals planned output. No random failure/yield loss.
+
+Seed + date shuffles available machines without active maintenance. Assign runs
+in waves, each lasting 10 simulated minutes regardless of output quantity.
+Machines can perform successive runs, never overlapping; reject a cycle that
+cannot finish before midnight. All output is added before oldest-first whole-order
+shipping one minute after the last run. Unfulfillable orders consume no stock.
+
+Preview changes no rows/sequences. Apply locks sources and business tables and
+commits planning, execution, inventory and shipping atomically. Intermediate
+states are not separately committed/event-logged. Refuse unfinished prior work,
+future source timestamps, wrong dates, missing inventory and no-machine shortages.
+Recorded production/shipping protects against repeats; a no-demand no-op leaves
+no persistent cycle marker and can be repeated safely.
+
+Validation: 23 tests passed (12 pure/unit, 11 PostgreSQL integration), including
+inventory balance, nonoverlapping runs, shortage rounding, insufficient stock,
+all-or-nothing shipment selection, no-machine refusal, rollback at shipping,
+concurrent duplicate protection, price/item preservation and next-day continuation.
+All database tests used automatically removed isolated temporary databases.
+
+Applied January 3 to local `zepic_operational`:
+
+- 14 completed production orders, 14 completed runs; 3,200 units produced.
+- 148 orders shipped at 18:32 UTC; 82 remain pending, none confirmed.
+- Inventory: 3,100 opening + 3,200 produced − 4,628 shipped = 1,672 units.
+- No negative stock, no running production; order items and master data unchanged.
+
+Next is Phase 1.6: compose daily orders and production into consecutive complete
+cycles, starting January 4 for this database. Earlier notes below describe their
+historical validation states. Zepic permits local commits/pulls; pushes still
+require explicit authorization. This permission does not apply to project 4403.
 
 ## Phase 1.4 implementation and validation — 2026-10-01
 
@@ -34,7 +73,7 @@ Local `zepic_operational` was advanced through two simulation days:
 Next: Phase 1.5 planning/production and all-or-nothing fulfillment of confirmed
 demand. Next ungenerated order date is January 4. Do not advance a 30-day run
 until the production cycle is connected. Earlier validation notes below record
-historical states before this phase. No commit or push was made for Phase 1.4.
+historical states before this phase. Phase 1.4 was committed as `53bb9a0` locally.
 
 ## Phase 1.3 implementation
 
@@ -104,13 +143,12 @@ final Phase 1.1 decisions. This note summarizes the operational phase.
 
 ## Scope and next step
 
-Phases 1.2–1.4 supply the operational schema, initial master data and daily
-order creation/confirmation. Phase 1.5 adds production planning, execution and
-fulfillment; Phase 1.6 connects multiple complete simulation cycles.
+Phases 1.2–1.5 supply the operational schema, initial master data, daily orders,
+production and fulfillment. Phase 1.6 connects multiple complete simulation cycles.
 `database/verify.sql` remains a Phase 1.2 check for a disposable database only.
 
-Collaboration: show changed files and git diff after each group; do not commit
-unless explicitly requested.
+Collaboration: show changed files and git diff after each group. The user permits
+commits and pulls in Zepic; do not push without explicit authorization.
 
 ## Phase 1.2 validation — 2026-09-23
 

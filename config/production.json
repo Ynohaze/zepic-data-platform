@@ -1,0 +1,5 @@
+{
+  "seed": 42,
+  "buffer_rate": "0.05",
+  "run_minutes": 10
+}

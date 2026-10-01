@@ -9,4 +9,7 @@ current database master data. Add `--apply` to confirm older pending orders and
 insert that day's orders/items in one transaction. Configuration defaults to
 `config/daily_operations.json`. Run dates consecutively; repeats are refused.
 
-Phase 1.5 production planning remains future work.
+`run_production_planning.py --date YYYY-MM-DD` previews production and whole-order
+fulfillment for the latest generated order date. Add `--apply` for an atomic
+cycle. Defaults live in `config/production.json`; successful output equals plan.
+Run daily operations first, then production, before advancing to the next day.

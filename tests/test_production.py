@@ -39,7 +39,7 @@ class ProductionTests(unittest.TestCase):
         self.assertEqual(first['shipped'], [1])
         with self.assertRaisesRegex(ValueError, 'no available machine'):
             build_plan(config, date(2026, 1, 3), orders, products, [])
-        config['run_minutes'] = 200
+        config['run_minutes'] = 210
         with self.assertRaisesRegex(ValueError, 'cannot finish'):
             build_plan(config, date(2026, 1, 3), orders, products, machines)
 

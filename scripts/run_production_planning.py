@@ -1,4 +1,4 @@
-"""Preview or apply one complete production/fulfillment cycle at 18:00 UTC."""
+"""Preview or apply one complete production/fulfillment cycle: plan at 09:00, ship at 16:00 UTC."""
 
 import argparse
 from collections import Counter
@@ -21,8 +21,8 @@ def validate_config(config):
     rate = Decimal(config['buffer_rate'])
     if not rate.is_finite() or not 0 <= rate < 1 or rate != rate.quantize(Decimal('0.0001')):
         raise ValueError('buffer_rate must be in [0, 1) with at most four decimal places')
-    if type(config['run_minutes']) is not int or not 1 <= config['run_minutes'] <= 357:
-        raise ValueError('run_minutes must be an integer between 1 and 357')
+    if type(config['run_minutes']) is not int or not 1 <= config['run_minutes'] <= 418:
+        raise ValueError('run_minutes must be an integer between 1 and 418')
     return rate
 
 
@@ -52,7 +52,7 @@ def plan_shipments(orders, stock):
 
 def build_plan(config, day, orders, products, machines):
     rate = validate_config(config)
-    stamp = datetime.combine(day, time(18), tzinfo=timezone.utc)
+    stamp = datetime.combine(day, time(9), tzinfo=timezone.utc)
     demand = Counter()
     for order in orders:
         for item in order['items']:
@@ -79,9 +79,9 @@ def build_plan(config, day, orders, products, machines):
         end = start + timedelta(minutes=config['run_minutes'])
         plan.update(machine_id=machines[index % len(machines)]['machine_id'], start_time=start, end_time=end)
         stock[plan['product_id']] += plan['planned_quantity']
-    ship_time = max((p['end_time'] for p in plans), default=stamp) + timedelta(minutes=1)
-    if ship_time.date() != day:
-        raise ValueError('Cycle cannot finish today; shorten runs or provide more available machines')
+    ship_time = datetime.combine(day, time(16), tzinfo=timezone.utc)
+    if any(p['end_time'] >= ship_time for p in plans):
+        raise ValueError('Cycle cannot finish before 16:00 shipment; shorten runs or provide more available machines')
     shipped, remaining = plan_shipments(orders, stock)
     return dict(planned_at=stamp, buffer_rate=rate, production=plans, shipped=shipped,
                 shipping_time=ship_time, stock_after_production=stock, remaining_stock=remaining,
@@ -90,7 +90,7 @@ def build_plan(config, day, orders, products, machines):
 
 def run_cycle(connection, config, day, apply=False):
     validate_config(config)
-    stamp = datetime.combine(day, time(18), tzinfo=timezone.utc)
+    stamp = datetime.combine(day, time(9), tzinfo=timezone.utc)
     with connection.transaction():
         with connection.cursor() as cur:
             if apply:
@@ -114,9 +114,12 @@ def run_cycle(connection, config, day, apply=False):
                         "OR EXISTS (SELECT 1 FROM public.orders WHERE status = 'shipped' AND updated_at >= %s)", (day, stamp))
             if cur.fetchone()[0]:
                 raise ValueError('Production/fulfillment cycle already recorded for this date or later')
-            # Never rewrite a later source state with historical simulation times.
+            # Pending orders/items are not inputs to this production cycle.
+            # Guard participating demand and operational state against backdating.
             cur.execute('SELECT max(updated_at) FROM ('
-                        'SELECT updated_at FROM public.orders UNION ALL SELECT updated_at FROM public.order_items '
+                        "SELECT updated_at FROM public.orders WHERE status = 'confirmed' "
+                        "UNION ALL SELECT i.updated_at FROM public.order_items i "
+                        "JOIN public.orders o USING(order_id) WHERE o.status = 'confirmed' "
                         'UNION ALL SELECT updated_at FROM public.inventory UNION ALL SELECT updated_at FROM public.products '
                         'UNION ALL SELECT updated_at FROM public.machines UNION ALL SELECT updated_at FROM public.production_orders '
                         'UNION ALL SELECT updated_at FROM public.production_runs UNION ALL SELECT updated_at FROM public.maintenance_records) events')

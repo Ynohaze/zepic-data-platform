@@ -1,5 +1,15 @@
 # Zepic — Phase 1.5 handoff
 
+## Production schedule correction — 2026-10-01
+
+New cycles plan at 09:00 UTC, run from 09:01 and ship at 16:00. All runs must
+finish strictly before 16:00. Pending orders and their items are excluded from
+the time guard as well as demand/fulfillment, so pre-generated afternoon pending
+rows do not block morning production. Future timestamps on participating
+confirmed demand and operational state still prevent historical rewrites.
+Existing January 3 database rows retain the prior schedule; no business data
+was modified by this correction. Earlier notes below describe that prior run.
+
 ## Phase 1.5 implementation and validation — 2026-10-01
 
 Production and fulfillment are implemented in `scripts/run_production_planning.py`

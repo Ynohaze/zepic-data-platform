@@ -69,23 +69,48 @@ class ProductionDatabaseTests(unittest.TestCase):
         self.assertEqual(run_cycle(self.conn, self.config, tomorrow, apply=True)['shipped_orders'], 82)
 
     def test_no_shortage_can_ship_without_machines(self):
-        self.conn.execute("UPDATE inventory SET available_quantity=100000,updated_at='2026-01-03T17:00:00Z'")
-        self.conn.execute("UPDATE machines SET status='maintenance',updated_at='2026-01-03T17:00:00Z'")
+        self.conn.execute("UPDATE inventory SET available_quantity=100000,updated_at='2026-01-03T08:30:00Z'")
+        self.conn.execute("UPDATE machines SET status='maintenance',updated_at='2026-01-03T08:30:00Z'")
         result = run_cycle(self.conn, self.config, self.day, apply=True)
         self.assertEqual(result['production_runs'], 0)
         self.assertEqual(result['shipped_orders'], 148)
         with self.assertRaisesRegex(ValueError, 'already recorded'):
             run_cycle(self.conn, self.config, self.day, apply=True)
 
+    def test_afternoon_pending_orders_do_not_block_morning_production(self):
+        self.conn.execute("UPDATE orders SET created_at='2026-01-03T17:00:00Z', "
+                          "updated_at='2026-01-03T17:00:00Z' WHERE status='pending'")
+        self.conn.execute("UPDATE order_items SET created_at='2026-01-03T17:00:00Z', "
+                          "updated_at='2026-01-03T17:00:00Z' WHERE order_id IN "
+                          "(SELECT order_id FROM orders WHERE status='pending')")
+        pending = self.conn.execute("SELECT * FROM orders WHERE status='pending' ORDER BY order_id").fetchall()
+        items = self.conn.execute('SELECT * FROM order_items ORDER BY order_item_id').fetchall()
+        preview = run_cycle(self.conn, self.config, self.day)
+        self.assertEqual(preview['shipped_orders'], 148)
+        result = run_cycle(self.conn, self.config, self.day, apply=True)
+        self.assertEqual(result, dict(preview, applied=True))
+        self.assertEqual(pending, self.conn.execute("SELECT * FROM orders WHERE status='pending' ORDER BY order_id").fetchall())
+        self.assertEqual(items, self.conn.execute('SELECT * FROM order_items ORDER BY order_item_id').fetchall())
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM production_orders WHERE created_at <> '2026-01-03T09:00:00Z'").fetchone()[0], 0)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM production_runs WHERE start_time < '2026-01-03T09:01:00Z' OR end_time >= '2026-01-03T16:00:00Z'").fetchone()[0], 0)
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM orders WHERE status='shipped' AND updated_at <> '2026-01-03T16:00:00Z'").fetchone()[0], 0)
+
+    def test_future_confirmed_demand_is_still_rejected(self):
+        self.conn.execute("UPDATE orders SET updated_at='2026-01-03T10:00:00Z' WHERE status='confirmed'")
+        before = self.snapshot()
+        with self.assertRaisesRegex(ValueError, 'time backwards'):
+            run_cycle(self.conn, self.config, self.day, apply=True)
+        self.assertEqual(before, self.snapshot())
+
     def test_unavailable_machines_and_incomplete_cycle_refuse_changes(self):
-        self.conn.execute("UPDATE machines SET status='maintenance',updated_at='2026-01-03T17:00:00Z'")
+        self.conn.execute("UPDATE machines SET status='maintenance',updated_at='2026-01-03T08:30:00Z'")
         before = self.snapshot()
         with self.assertRaisesRegex(ValueError, 'no available machine'):
             run_cycle(self.conn, self.config, self.day, apply=True)
         self.assertEqual(before, self.snapshot())
-        self.conn.execute("UPDATE machines SET status='available',updated_at='2026-01-03T17:01:00Z'")
+        self.conn.execute("UPDATE machines SET status='available',updated_at='2026-01-03T08:31:00Z'")
         self.conn.execute("INSERT INTO production_orders(product_id,shortage_quantity,batch_multiple,planned_quantity,planned_start_date,created_at,updated_at) "
-                          "SELECT product_id,1,20,20,'2026-01-03','2026-01-03T17:01:00Z','2026-01-03T17:01:00Z' FROM products LIMIT 1")
+                          "SELECT product_id,1,20,20,'2026-01-03','2026-01-03T08:31:00Z','2026-01-03T08:31:00Z' FROM products LIMIT 1")
         before = self.snapshot()
         with self.assertRaisesRegex(ValueError, 'Unfinished production'):
             run_cycle(self.conn, self.config, self.day, apply=True)

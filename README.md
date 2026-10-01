@@ -15,28 +15,32 @@ The example is for a fresh simulation at that date. This checkout has already
 completed January 3: 14 production orders/runs, 3,200 units produced, 148 orders
 shipped and 82 still pending. Next run daily operations for January 4, then
 production for January 4. Do not replay the January 3 apply command.
+The January 3 records retain the earlier 18:00/18:32 schedule; new cycles use
+09:00 planning and 16:00 shipping. Historical rows were not rewritten.
 
 Rules (`config/production.json`, overridable with `--config`):
 
-- At 18:00 UTC, aggregate only confirmed demand by product, subtract current
+- At 09:00 UTC, aggregate only confirmed demand by product, subtract current
   inventory and create one production order per positive shortage. Planned
   quantity is `ceil(shortage * (1 + buffer_rate) / batch_multiple) * batch_multiple`.
   Default buffer is 5%; snapshot it and the product batch size on the production order.
 - Available machines with no active maintenance are deterministically shuffled
   using seed + date, then assigned in round-robin waves. Each run lasts 10 simulated
   minutes by default, independent of quantity: this is an MVP timing assumption,
-  not a throughput/capacity model. First runs start at 18:01. A machine may execute
+  not a throughput/capacity model. First runs start at 09:01. A machine may execute
   several successive runs, but its recorded intervals never overlap.
 - One run per production order; all runs succeed with actual quantity equal to
   planned quantity. Orders go planned → released → completed, runs go running →
   completed, and output enters inventory. Machine availability is not changed.
-- One minute after the last run (18:01 if none), try confirmed sales orders oldest
+- At 16:00 UTC (also when no production is needed), try confirmed sales orders oldest
   first, breaking ties by order_id. Ship only if every item is available. Otherwise
   consume nothing for that order and continue trying the others. Deduction and
   the shipped header update share the same transaction; items/prices stay unchanged.
 - Reject missing inventory, inactive products requiring production, shortages
   without machines, unfinished prior production, dates other than the latest
-  generated order date, future source timestamps or schedules crossing midnight.
+  generated order date, future participating-source timestamps or runs ending at/after 16:00.
+  Pending orders and their items are excluded from the source-time guard as well
+  as demand/fulfillment; afternoon pending rows cannot block morning planning.
   Existing stock can be shipped without any available machines.
 - Preview is read-only; apply locks the relevant tables and commits the whole
   cycle atomically. Intermediate planned/released/running states are executed

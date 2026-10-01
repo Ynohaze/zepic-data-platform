@@ -1,6 +1,56 @@
 # Zepic Data Platform
 
-DE flagship — Phase 1.2: a local PostgreSQL operational source.
+DE flagship — local PostgreSQL, initial master data and daily order simulation.
+
+## Phase 1.4 daily orders
+
+After Phase 1.3 initialization, preview then apply each UTC day in order:
+
+```sh
+.venv/bin/python scripts/generate_daily_operations.py --date 2026-01-02
+.venv/bin/python scripts/generate_daily_operations.py --date 2026-01-02 --apply
+.venv/bin/python scripts/generate_daily_operations.py --date 2026-01-03 --apply
+```
+
+These are fresh-database examples. This local checkout has already applied
+January 2 and 3; its next order-generation date is January 4. Existing dates
+are rejected rather than appended again. Phase 1.5 will process the confirmed
+demand before the longer multi-day simulation is introduced.
+
+Configuration: `config/daily_operations.json` (`--config` accepts another path).
+
+- 50–150 orders/day; each uniformly selects a customer and 1–5 distinct active
+  products, with 1–20 units per item. Sales quantities need not be production
+  batch multiples. The catalog price becomes the order-item price snapshot;
+  `total_amount` is the Decimal sum of its item amounts.
+- Older pending orders are confirmed at 08:00 UTC on the next simulation day.
+  New pending orders are timestamped between 09:00 inclusive and 17:00 exclusive.
+  Confirmation changes only the order header's status and updated_at, not items.
+- First date defaults to January 2, 2026, after the master-data origin. Change
+  `first_date` before the first run if using another origin. Subsequent runs
+  must be the calendar day immediately after the most recent order date.
+- Seed + date determines each day's random stream. Reproduction also requires
+  identical config, source rows, code and Python version. Preview reads current
+  database data in a read-only snapshot; it changes neither rows nor sequences.
+  A later apply can differ if source data changes after preview.
+- One transaction confirms previous orders and inserts the new day. Source
+  table locks freeze prices/customer IDs; order table locks serialize the date
+  check with inserts. Failure rolls back all row changes, including confirmations.
+  Failed inserts can still consume identity sequence values.
+- Duplicate, skipped and backward dates are rejected. This is a bootstrap
+  simulator guard, not pipeline UPSERT/idempotency. It relies on keeping generated
+  orders and having at least one order per day; manual deletion of a whole day's
+  orders removes that evidence. No new run-history table was added.
+- No cancellation, shipment, inventory deduction, production or maintenance
+  is performed in this phase. Confirmed demand waits for Phase 1.5.
+
+Tests (database suite creates and removes a uniquely named temporary database;
+the configured PostgreSQL user needs permission to create databases):
+
+```sh
+.venv/bin/python -m unittest discover -s tests -v
+ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
+```
 
 ## Phase 1.3 initial data
 
@@ -68,7 +118,10 @@ the CLI search path, replace `docker compose` with:
 - `docker-compose.yml`: PostgreSQL service, healthcheck and persistent volume.
 - `database/schema.sql`: agreed 9-table schema, indexes and triggers.
 - `database/verify.sql`: SQL smoke checks for a disposable initialized database.
-- `scripts/`, `src/`: reserved for later simulator implementation.
+- `config/`: initial master-data and daily-order parameters.
+- `scripts/`: initial-data and daily-operation generators.
+- `tests/`: generation tests and optional isolated database tests.
+- `src/`: reserved for shared utilities when needed.
 - `PROJECT_HANDOFF.md`: locked business decisions and phase boundary.
 
 ## Verify

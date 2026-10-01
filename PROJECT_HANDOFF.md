@@ -1,4 +1,40 @@
-# Zepic — Phase 1.3 handoff
+# Zepic — Phase 1.4 handoff
+
+## Phase 1.4 implementation and validation — 2026-10-01
+
+`scripts/generate_daily_operations.py` with `config/daily_operations.json` now
+generates 50–150 orders/day, 1–5 distinct active products/order and 1–20 units
+per item. Customer and product choices are uniform; prices are snapshots and
+totals use Decimal. The default first date is January 2, 2026.
+
+New orders start pending at 09:00–17:00 UTC (end exclusive). On the next day,
+older pending orders become confirmed at 08:00 UTC, updating only the header.
+There is no cancellation, shipping, inventory mutation or production here.
+
+Seed + date gives independent daily random streams. Preview uses a read-only
+database snapshot. Apply locks customer/product sources and order tables,
+checks the next date, confirms older orders and inserts orders/items in one
+transaction. Duplicate, skipped and backward dates are refused. The date guard
+uses retained order rows and positive daily counts; deleting a day's orders
+can invalidate that guard. No schema changes or run ledger were introduced.
+
+Validation: all 13 tests passed, including five PostgreSQL 16 integration tests
+in an automatically removed temporary database. Covered preview without writes
+or sequence changes, exact totals, historical price snapshots, active products,
+confirmation timestamps, duplicate/date guards, rollback including previous
+confirmations, retry after failure and two concurrent attempts at one date.
+
+Local `zepic_operational` was advanced through two simulation days:
+
+- January 2: 148 orders / 441 items, now confirmed on January 3 at 08:00 UTC.
+- January 3: 82 orders / 239 items, currently pending.
+- Totals: 230 orders / 680 items. Master data and inventory unchanged;
+  production and maintenance tables remain empty.
+
+Next: Phase 1.5 planning/production and all-or-nothing fulfillment of confirmed
+demand. Next ungenerated order date is January 4. Do not advance a 30-day run
+until the production cycle is connected. Earlier validation notes below record
+historical states before this phase. No commit or push was made for Phase 1.4.
 
 ## Phase 1.3 implementation
 
@@ -68,11 +104,10 @@ final Phase 1.1 decisions. This note summarizes the operational phase.
 
 ## Scope and next step
 
-Phase 1.2 supplies repository structure, Compose and initialization SQL.
-Runtime acceptance requires a healthy PostgreSQL 16 container plus successful
-`database/verify.sql`; see README for commands. Phase 1.3 will generate initial
-customers, products, machines and inventory. Daily activity and production
-planning remain subsequent phases.
+Phases 1.2–1.4 supply the operational schema, initial master data and daily
+order creation/confirmation. Phase 1.5 adds production planning, execution and
+fulfillment; Phase 1.6 connects multiple complete simulation cycles.
+`database/verify.sql` remains a Phase 1.2 check for a disposable database only.
 
 Collaboration: show changed files and git diff after each group; do not commit
 unless explicitly requested.

@@ -69,7 +69,7 @@ class ExtractionUnitTests(unittest.TestCase):
 
     def test_fetch_refuses_unknown_table(self):
         with self.assertRaisesRegex(ValueError, "Unsupported source table"):
-            fetch_batch("customers", "http://source.test", None)
+            fetch_batch("not_a_source_table", "http://source.test", None)
 
 
 if __name__ == "__main__":

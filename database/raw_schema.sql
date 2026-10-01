@@ -1,5 +1,5 @@
 -- Phase 2 raw landing and per-table extraction progress.
--- Apply once to the same PostgreSQL database as the operational source.
+-- Apply to the same PostgreSQL database as the operational source; safe to rerun.
 BEGIN;
 
 CREATE SCHEMA IF NOT EXISTS zepic_raw;
@@ -39,5 +39,36 @@ CREATE TABLE IF NOT EXISTS zepic_raw.watermarks (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     CHECK ((last_updated_at IS NULL) = (last_primary_key IS NULL))
 );
+
+-- Widen allowlists on both first creation and upgrades from the three-table MVP.
+ALTER TABLE zepic_raw.extraction_batches
+    DROP CONSTRAINT IF EXISTS extraction_batches_source_table_check;
+ALTER TABLE zepic_raw.extraction_batches
+    DROP CONSTRAINT IF EXISTS ck_raw_batch_source_table;
+ALTER TABLE zepic_raw.extraction_batches
+    ADD CONSTRAINT ck_raw_batch_source_table CHECK (source_table IN (
+        'customers', 'products', 'machines', 'inventory', 'orders', 'order_items',
+        'production_orders', 'production_runs', 'maintenance_records'
+    ));
+
+ALTER TABLE zepic_raw.records
+    DROP CONSTRAINT IF EXISTS records_source_table_check;
+ALTER TABLE zepic_raw.records
+    DROP CONSTRAINT IF EXISTS ck_raw_record_source_table;
+ALTER TABLE zepic_raw.records
+    ADD CONSTRAINT ck_raw_record_source_table CHECK (source_table IN (
+        'customers', 'products', 'machines', 'inventory', 'orders', 'order_items',
+        'production_orders', 'production_runs', 'maintenance_records'
+    ));
+
+ALTER TABLE zepic_raw.watermarks
+    DROP CONSTRAINT IF EXISTS watermarks_source_table_check;
+ALTER TABLE zepic_raw.watermarks
+    DROP CONSTRAINT IF EXISTS ck_raw_watermark_source_table;
+ALTER TABLE zepic_raw.watermarks
+    ADD CONSTRAINT ck_raw_watermark_source_table CHECK (source_table IN (
+        'customers', 'products', 'machines', 'inventory', 'orders', 'order_items',
+        'production_orders', 'production_runs', 'maintenance_records'
+    ));
 
 COMMIT;

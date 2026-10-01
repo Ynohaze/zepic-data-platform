@@ -68,17 +68,17 @@
 | customers | 100（standard 70 / silver 20 / gold 10） |
 | products | 20 |
 | machines | 5，全部 available |
-| inventory | 20 行，库存总件数 812 |
-| orders | 3,234 |
-| order_items | 9,615 |
-| production_orders | 570，全部 completed |
-| production_runs | 570，全部 completed |
+| inventory | 20 行，库存总件数 700 |
+| orders | 3,342 |
+| order_items | 9,950 |
+| production_orders | 590，全部 completed |
+| production_runs | 590，全部 completed |
 | maintenance_records | 0 |
-| shipped / pending / confirmed 订单 | 3,137 / 97 / 0 |
+| shipped / pending / confirmed 订单 | 3,234 / 108 / 0 |
 
-97 张 pending 是 2 月 1 日的新订单，不是缺货积压。订单金额、逐产品库存
+108 张 pending 是 2 月 2 日的新订单，不是缺货积压。订单金额、逐产品库存
 守恒、非负库存、机器运行不重叠和发货时间均已由模拟器及测试核验。Phase 2
-全套验证为 **43 项通过**，数据库测试使用自动清理的独立临时库。
+全套验证为 **45 项通过**，数据库测试使用自动清理的独立临时库。
 
 ## 4. 不要改变的业务与时间语义
 
@@ -121,10 +121,11 @@
 
 ## 6. Phase 2 已实现范围
 
-用户确认了 FastAPI + 同库 PostgreSQL `zepic_raw` + 复合 watermark 方案。
+用户确认了 FastAPI + 同库 PostgreSQL `zepic_raw` + 复合 watermark 方案；最终
+API 白名单和客户端都支持全部 9 张 operational 表。
 
-- API 白名单只允许 `orders`、`order_items`、`inventory`。用 `(updated_at,
-  主键)` 升序 keyset 分页，单页最大 1,000 行；批次先固定最大复合键，再按
+- API 白名单只包含全部 9 张 operational 表。用 `(updated_at, 主键)` 升序
+  keyset 分页，单页最大 1,000 行；批次先固定最大复合键，再按
   `<= upper` 取数。Decimal 输出十进制字符串，TIMESTAMPTZ 输出带 `Z` 的 UTC。
 - 客户端以来源表为单位独立抽取。raw payload 保留完整行；批次 metadata、
   raw 行和 watermark 在同一事务中提交。失败整批回滚；重试使用有界 HTTP
@@ -132,16 +133,22 @@
   不用运行时钟虚构来源 watermark。
 - MVP 要求抽取期间暂停模拟写入。复合游标和固定上界解决稳定排序/分页，
   但并发源写仍不在 MVP 内；不是 CDC，也不能重建事务内部的短暂状态。
-- 首次 baseline 从 2026 年 1 月数据抽取；之后模拟 2 月 1 日并再次抽取。
-  扩展其他 6 张表、并发快照与 Phase 3 数据质量属于后续工作。
+- Orders、order_items 和 inventory 的 baseline 是截至 1 月 31 日；这三张表
+  的 2 月 1 日 batch 捕获了 INSERT 与 UPDATE。随后扩至 9 张表，customers、
+  products、machines、production_orders 和 production_runs 的首次 full pull
+  包含了当时全部保留行；maintenance 为空。2 月 2 日再次抽取九表：捕获了
+  108 个新订单、335 个明细、20 个生产订单、20 个 run、20 个库存更新，以及
+  97 个前日 pending 订单的状态更新。其他 master data 和 maintenance 为 0 行。
 
-已应用 `database/raw_schema.sql` 到 `zepic_operational`。Raw batch 1–3 为
-baseline：orders 3,137、order_items 9,306、inventory 20 行。Batch 4–6 为
-2 月 1 日增量：orders 216（97 INSERT、119 UPDATE）、order_items 309 INSERT、
-inventory 20 UPDATE。Batch 7–9 是立即重跑所得空批次，均 0 行且 watermark
-未变。逐表 watermarks 仍是源记录时间，不是现实抽取时间。
+已应用 `database/raw_schema.sql` 到 `zepic_operational`；脚本可重复运行并
+会保留 raw 数据。Batch 1–3 是 Jan 31 baseline；4–6 是 Feb 1 增量；7–9 是
+无变化重跑；10–12 baseline customers/products/machines；13–15 是前三表空批次；
+16–17 baseline production tables；18 是 maintenance 空表初始化；19–27 是
+Feb 2 增量/空批次。当前 raw 共 14,873 行；maintenance 的 watermark 是
+`initialized=true`、键值为空。逐表 watermarks 记录来源 `updated_at`，不是
+现实抽取时间。不同来源表独立初始化，Feb 2 才达到共同的后续增量检查点。
 
-后续路线：Phase 3 数据质量/隔离/幂等并扩展全表；Phase 4 warehouse + dbt；Phase 5 Airflow
+后续路线：Phase 3 数据质量/隔离/幂等；Phase 4 warehouse + dbt；Phase 5 Airflow
 编排；Phase 6 portfolio 整理。不要现在加入 Kafka、云部署、Spark 或额外 ERP 表。
 
 ## 7. 新 session 可用命令
@@ -166,4 +173,5 @@ Docker 未运行时先启动 Docker Desktop，再 `docker compose up -d --wait`�
 .venv/bin/python scripts/extract_to_raw.py --table all
 ```
 
-抽取前暂停模拟器。不要重复应用 2026-02-01；下一模拟日为 2026-02-02。
+抽取前暂停模拟器。不要重复应用 2026-02-01 或 2026-02-02；下一模拟日为
+2026-02-03。

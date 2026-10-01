@@ -14,7 +14,17 @@ from psycopg.types.json import Jsonb
 
 
 ROOT = Path(__file__).resolve().parents[1]
-TABLES = {"orders": "order_id", "order_items": "order_item_id", "inventory": "product_id"}
+TABLES = {
+    "customers": "customer_id",
+    "products": "product_id",
+    "machines": "machine_id",
+    "inventory": "product_id",
+    "orders": "order_id",
+    "order_items": "order_item_id",
+    "production_orders": "production_order_id",
+    "production_runs": "production_run_id",
+    "maintenance_records": "maintenance_record_id",
+}
 
 
 def parse_timestamp(value):

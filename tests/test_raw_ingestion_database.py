@@ -113,6 +113,30 @@ class RawIngestionDatabaseTests(unittest.TestCase):
         self.assertEqual(retry["rows"], 1)
         self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.records").fetchone()[0], 3)
 
+    def test_empty_maintenance_table_initializes_without_a_fake_watermark(self):
+        empty = extract_table(self.conn, "maintenance_records", "http://test",
+                              request=lambda _: {"upper_bound": None})
+        self.assertEqual(empty["rows"], 0)
+        self.assertIsNone(empty["watermark"])
+        self.assertEqual(self.conn.execute(
+            "SELECT last_updated_at, last_primary_key, initialized FROM zepic_raw.watermarks "
+            "WHERE source_table='maintenance_records'").fetchone(), (None, None, True))
+        self.assertEqual(self.conn.execute("SELECT source_table, row_count FROM zepic_raw.extraction_batches")
+                         .fetchone(), ("maintenance_records", 0))
+
+        stamp = "2026-02-01T10:00:00Z"
+
+        def newly_populated(url):
+            if url.endswith("/bounds"):
+                return {"upper_bound": {"updated_at": stamp, "primary_key": 9}}
+            return {"data": [{"maintenance_record_id": 9, "updated_at": stamp,
+                               "status": "scheduled"}],
+                    "next_cursor": {"updated_at": stamp, "primary_key": 9}, "has_more": False}
+
+        later = extract_table(self.conn, "maintenance_records", "http://test", request=newly_populated)
+        self.assertEqual(later["rows"], 1)
+        self.assertEqual(later["watermark"]["primary_key"], 9)
+
 
 if __name__ == "__main__":
     unittest.main()

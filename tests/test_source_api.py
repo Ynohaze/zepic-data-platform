@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 from fastapi import HTTPException
 
-from src.source_api import json_value, rows
+from src.source_api import TABLES as API_TABLES, json_value, rows
+from scripts.extract_to_raw import TABLES as EXTRACT_TABLES
 
 
 class SourceApiUnitTests(unittest.TestCase):
@@ -27,11 +28,17 @@ class SourceApiUnitTests(unittest.TestCase):
     def test_rejects_unsupported_tables_and_malformed_cursor(self):
         stamp = datetime(2026, 1, 1, tzinfo=timezone.utc)
         with self.assertRaises(HTTPException) as unknown:
-            rows("customers", stamp, 10)
+            rows("not_a_source_table", stamp, 10)
         self.assertEqual(unknown.exception.status_code, 404)
         with self.assertRaises(HTTPException) as malformed:
             rows("orders", stamp, 10, after_updated_at=stamp)
         self.assertEqual(malformed.exception.status_code, 422)
+
+    def test_api_and_client_cover_all_nine_operational_tables(self):
+        expected = {"customers", "products", "machines", "inventory", "orders", "order_items",
+                    "production_orders", "production_runs", "maintenance_records"}
+        self.assertEqual(set(API_TABLES), expected)
+        self.assertEqual(set(EXTRACT_TABLES), expected)
 
     def test_requires_timezone_aware_upper_and_cursor_not_past_upper(self):
         naive = datetime(2026, 1, 1)

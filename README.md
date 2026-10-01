@@ -51,8 +51,8 @@ incremental pulls between simulated days; it does not retain intermediate events
 
 ## Phase 2 source API and raw ingestion
 
-The first extraction slice exposes `orders`, `order_items` and `inventory`.
-It reads only from the operational schema. The API uses a table allowlist, a
+The API exposes all nine operational tables through an explicit table allowlist.
+It reads only from the operational schema. The API uses a
 maximum page size of 1,000 and keyset ordering by `(updated_at, primary key)`.
 Money is serialized as decimal strings and timestamps as UTC ISO-8601 values.
 
@@ -79,15 +79,17 @@ first use. Repeat the extraction after advancing one simulation day to see
 inserts and updates. Keep the API bound to localhost for this local MVP; network
 authentication and concurrent source writes are outside this slice.
 
-The verified baseline held 3,137 orders, 9,306 items and 20 inventory rows.
-After applying February 1 and extracting again, the raw batches contained 97
-new orders, 119 updated orders, 309 new items and 20 updated inventory rows.
-An immediate third pull wrote three empty batches and left all watermarks
-unchanged. The operational database now has 3,234 orders, 9,615 items,
-570 completed production orders/runs, 3,137 shipped orders, 97 pending orders
-and 812 inventory units. Next simulation date: February 2, 2026.
+The Jan 31 baseline held 3,137 orders, 9,306 items and 20 inventory rows.
+The Feb 1 pull captured 97 new orders, 119 updated orders, 309 new items and
+20 updated inventory rows. Full baselines for the remaining tables followed;
+maintenance was empty. The Feb 2 pull captured 108 new orders, 97 order updates,
+335 new items, 20 new production orders, 20 new runs and 20 inventory updates.
+The operational database now has 3,342 orders, 9,950 items, 590 completed
+production orders/runs, 3,234 shipped orders, 108 pending orders and 700
+inventory units. Raw contains 14,873 rows across nine source tables. Next
+simulation date: February 3, 2026.
 
-Run all 43 tests, including temporary-PostgreSQL integration tests, with:
+Run all 45 tests, including temporary-PostgreSQL integration tests, with:
 
 ```sh
 ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v

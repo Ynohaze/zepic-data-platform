@@ -1,4 +1,39 @@
-# Zepic — Phase 1.5 handoff
+# Zepic — Phase 1.6 handoff
+
+## Phase 1.6 implementation and validation — 2026-10-01
+
+`scripts/run_simulation.py` connects the existing daily and production helpers
+with one outer transaction per new date. Source/business locks use the bootstrap
+order, nested helpers use savepoints, and daily JSON progress prints after commit.
+Preview lists dates/actions in a read-only snapshot; it is not a quantity forecast.
+
+`--start-date`, `--days` (1–366; default 30), `--resume`, `--apply`,
+`--daily-config` and `--production-config` control the run. Resume infers completion
+from contiguous retained order history and the all-success fulfillment rule;
+it skips completed days or finishes the latest order-only day. It refuses gaps,
+unfinished production and recorded production with remaining confirmed backlog.
+No schema/job-ledger change. Keep configs fixed and retain history; manual edits
+and future partial-failure models need stronger checkpoint semantics.
+
+All 32 tests passed, including a full 30-day database test, preview without
+writes/sequences, rollback of the whole failed day, recovery, price/stock/timeline
+invariants, and concurrent resume. Temporary databases were automatically removed.
+
+Applied range January 2–31 (30 days) in `zepic_operational`: skipped January 2–3,
+committed January 4–31 (28 new days). Retained January 3's historical evening
+schedule; all new cycles use 09:00 planning and 16:00 shipping.
+
+- 3,137 orders; 9,306 items; 550 completed production orders and 550 runs.
+- 3,018 shipped orders; 119 pending, all created January 31; no confirmed backlog.
+- Incremental inventory check: 1,672 opening + 88,180 produced − 89,193 shipped
+  = 659 units, verified separately per product. No negative stock or overlapping runs.
+- Order totals and new shipment times verified; master data and maintenance unchanged.
+
+Next simulation date is February 1. Phase 2 can now build source API and watermark
+incremental ingestion. Extract between future simulation days to observe row
+updates; this database is current-state storage, not a transition/event history.
+Maintenance/failure generation remains deferred. Earlier checkpoints below are
+historical and do not describe the current database counts.
 
 ## Production schedule correction — 2026-10-01
 
@@ -153,8 +188,8 @@ final Phase 1.1 decisions. This note summarizes the operational phase.
 
 ## Scope and next step
 
-Phases 1.2–1.5 supply the operational schema, initial master data, daily orders,
-production and fulfillment. Phase 1.6 connects multiple complete simulation cycles.
+Phases 1.2–1.6 supply the schema, initial master data and multi-day operational
+simulation. Next is Phase 2 source API and incremental ingestion.
 `database/verify.sql` remains a Phase 1.2 check for a disposable database only.
 
 Collaboration: show changed files and git diff after each group. The user permits

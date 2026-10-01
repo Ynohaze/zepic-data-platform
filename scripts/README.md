@@ -1,5 +1,11 @@
 # Operational scripts
 
+`run_simulation.py --start-date YYYY-MM-DD --days 30` previews a multi-day
+schedule. Add `--apply` to commit complete days and `--resume` to skip completed
+dates or finish the latest order-only day. A failed new day rolls back both
+orders and production; previous days stay committed. Daily JSON summaries are
+printed after commit. Use the same configs when resuming.
+
 `generate_initial_data.py` previews Phase 1.3 data; add `--apply` to initialize
 an empty database. Configuration defaults to `config/initial_data.json` relative
 to the repository, regardless of the current working directory.

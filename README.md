@@ -2,6 +2,54 @@
 
 DE flagship — local PostgreSQL with order, production and fulfillment simulation.
 
+## Phase 1.6 multi-day simulation
+
+Preview a date range, then apply it (30 days includes January 2 through January 31):
+
+```sh
+.venv/bin/python scripts/run_simulation.py --start-date 2026-01-02 --days 30 --resume
+.venv/bin/python scripts/run_simulation.py --start-date 2026-01-02 --days 30 --resume --apply
+```
+
+This local database has completed that range: 3,137 orders, 9,306 items,
+550 production orders/runs, 3,018 shipped orders, 119 pending orders and 659
+inventory units. The pending orders were created on January 31. The next date
+is February 1; no extra confirmation-only day was added.
+
+- `--days` accepts 1–366, default 30. Config overrides: `--daily-config` and
+  `--production-config`. They default to the existing Phase 1.4/1.5 JSON files.
+- Preview reads a consistent database snapshot and shows dates/actions only;
+  it does not forecast future generated quantities or consume identity values.
+- Each new day has one outer transaction: confirmation/order generation, then
+  planning/production/shipping. Nested helpers use savepoints. Commit only when
+  the whole day succeeds. Failure rolls back that day, preserving prior commits.
+  Identity sequence gaps after a failed write remain normal PostgreSQL behavior.
+- Each committed day prints a JSON summary. After resolving a failure, repeat
+  the same range with `--resume`; completed dates are skipped without duplicates.
+  Without `--resume`, overlapping existing dates are rejected.
+- Resume can finish the latest standalone order day if its confirmed orders
+  still await production. Include that date in the requested range. It does not
+  replay old order generation or overwrite the original production schedule.
+- Resume infers progress from contiguous retained orders, no older pending
+  orders, no unfinished production and the all-success shipping rule. It is not
+  a general job ledger. Manually edited/deleted history, mixed configs or future
+  failure/backlog models need a stronger checkpoint design. Keep configs fixed
+  while continuing the same simulation. A no-demand first day is a valid no-op.
+- All operational tables are locked in a consistent order for each apply day;
+  locks are released after each day's commit. Competing runners recheck progress
+  under the locks. This is deliberately a small local simulator, not a live ERP.
+- Business times remain 08:00 confirmation, 09:00 planning, 16:00 shipping;
+  new orders between 09:00–17:00 remain pending until the next day. Future pending
+  timestamps are excluded from production inputs. January 3 retains its earlier
+  validated 18:00 schedule; January 4 onward uses the revised working-day schedule.
+
+Tests include a complete 30-day run, stock conservation, repeat resume, recovery
+after a late production/shipping failure, and simultaneous runners. Run them
+with the existing `ZEPIC_DB_TESTS=1` command below. This completes the successful
+operational simulation path; maintenance/failure generation remains deferred.
+The database stores current row states, not every transition. Later incremental
+ingestion tests should extract between simulated days to observe successive updates.
+
 ## Phase 1.5 production and fulfillment
 
 After generating a day's orders, preview then apply its production cycle:
@@ -11,10 +59,10 @@ After generating a day's orders, preview then apply its production cycle:
 .venv/bin/python scripts/run_production_planning.py --date 2026-01-03 --apply
 ```
 
-The example is for a fresh simulation at that date. This checkout has already
-completed January 3: 14 production orders/runs, 3,200 units produced, 148 orders
-shipped and 82 still pending. Next run daily operations for January 4, then
-production for January 4. Do not replay the January 3 apply command.
+The example is for a fresh simulation at that date. The Phase 1.5 checkpoint
+completed January 3 with 14 production orders/runs, 3,200 units produced,
+148 orders shipped and 82 pending. The database has since advanced through
+January 31 (see Phase 1.6 above). Do not replay the January 3 apply command.
 The January 3 records retain the earlier 18:00/18:32 schedule; new cycles use
 09:00 planning and 16:00 shipping. Historical rows were not rewritten.
 
@@ -67,10 +115,10 @@ After Phase 1.3 initialization, preview then apply each UTC day in order:
 .venv/bin/python scripts/generate_daily_operations.py --date 2026-01-03 --apply
 ```
 
-These are fresh-database examples. This local checkout has already applied
-January 2 and 3; its next order-generation date is January 4. Existing dates
+These are fresh-database examples. The Phase 1.4 checkpoint applied January 2
+and 3; the local database has since advanced through January 31. Existing dates
 are rejected rather than appended again. Run the production cycle after each
-day's orders; the multi-day orchestrator belongs to Phase 1.6.
+day's orders, or use the Phase 1.6 runner above.
 
 Configuration: `config/daily_operations.json` (`--config` accepts another path).
 

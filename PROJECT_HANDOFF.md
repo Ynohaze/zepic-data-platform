@@ -1,5 +1,9 @@
 # Zepic — Phase 1.6 handoff
 
+**Starting Phase 2 in a new session? Read [PHASE2_HANDOFF.md](PHASE2_HANDOFF.md)
+first.** It consolidates the current checkpoint, collaboration rules, source
+timestamp semantics and proposed next steps. Sections below retain phase history.
+
 ## Phase 1.6 implementation and validation — 2026-10-01
 
 `scripts/run_simulation.py` connects the existing daily and production helpers

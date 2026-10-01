@@ -48,9 +48,11 @@
 | `scripts/generate_daily_operations.py` | 单日订单生成与确认 |
 | `scripts/run_production_planning.py` | 单日生产、入库与整单发货 |
 | `scripts/run_simulation.py` | 多日编排，每天一个外层事务，支持 `--resume` |
-| `src/source_api.py` | FastAPI 只读源 API；orders、order_items、inventory |
+| `src/source_api.py` | FastAPI 只读源 API；全部 9 张 operational 表 |
 | `scripts/extract_to_raw.py` | HTTP 分页抽取；raw batch 与逐表 watermark 原子提交 |
 | `database/raw_schema.sql` | `zepic_raw` raw 记录、批次与 watermark 表 |
+| `database/quality_schema.sql` | 版本化质量运行、quarantine findings 及查询视图 |
+| `scripts/validate_raw.py` | v1 行级质量规则、隔离 findings、幂等运行 |
 | `tests/` | 单元测试与独立临时 PostgreSQL 库集成测试 |
 | `PROJECT_HANDOFF.md` | 详细历史决策/验收记录；较早章节不是当前数据库状态 |
 
@@ -78,7 +80,7 @@
 
 108 张 pending 是 2 月 2 日的新订单，不是缺货积压。订单金额、逐产品库存
 守恒、非负库存、机器运行不重叠和发货时间均已由模拟器及测试核验。Phase 2
-全套验证为 **45 项通过**，数据库测试使用自动清理的独立临时库。
+全套验证为 **51 项通过**，数据库测试使用自动清理的独立临时库。
 
 ## 4. 不要改变的业务与时间语义
 
@@ -148,10 +150,24 @@ Feb 2 增量/空批次。当前 raw 共 14,873 行；maintenance 的 watermark �
 `initialized=true`、键值为空。逐表 watermarks 记录来源 `updated_at`，不是
 现实抽取时间。不同来源表独立初始化，Feb 2 才达到共同的后续增量检查点。
 
-后续路线：Phase 3 数据质量/隔离/幂等；Phase 4 warehouse + dbt；Phase 5 Airflow
+后续路线：Phase 3 补充跨表对账规则；Phase 4 warehouse + dbt；Phase 5 Airflow
 编排；Phase 6 portfolio 整理。不要现在加入 Kafka、云部署、Spark 或额外 ERP 表。
 
-## 7. 新 session 可用命令
+## 7. Phase 3 v1 raw 质量检查
+
+用户选择质量异常行隔离后继续推进既有 source watermark。已新增
+`database/quality_schema.sql` 和 `scripts/validate_raw.py`：按 batch 与 rule
+version 执行原子、幂等的校验运行；无效行保留在 raw，`quality_findings` 记录
+每个 rule violation。`quarantined_records` 与 `validated_records` 视图方便
+分别读取隔离和可用的 raw rows。validator 不更改 raw payload 或 watermark。
+
+v1 覆盖源主键与 updated_at 元数据一致性、必填文本、枚举/类型/数值范围、
+状态与时间字段组合，以及引用表中已落地的外键。它还没有实现订单头金额与
+明细汇总的跨表对账。首次运行验证 27 个 batch、14,873 行：14,873 通过、
+0 隔离。合成集成测试注入非法 customer_tier，验证 raw 与 watermark 不变、
+异常行被隔离；同一个 batch/rule_version 重跑返回既有结果且不重复 findings。
+
+## 8. 新 session 可用命令
 
 ```sh
 cd /Users/zhenyao/zepic-data-platform
@@ -161,6 +177,7 @@ docker compose ps
 .venv/bin/python -m unittest discover -s tests -v
 # 需要 Docker/PostgreSQL 启动；会创建并自动删除独立测试库：
 ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
+.venv/bin/python scripts/validate_raw.py
 ```
 
 Docker 未运行时先启动 Docker Desktop，再 `docker compose up -d --wait`，不要删 volume。

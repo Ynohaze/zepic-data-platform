@@ -89,7 +89,37 @@ production orders/runs, 3,234 shipped orders, 108 pending orders and 700
 inventory units. Raw contains 14,873 rows across nine source tables. Next
 simulation date: February 3, 2026.
 
-Run all 45 tests, including temporary-PostgreSQL integration tests, with:
+## Phase 3 raw quality checks
+
+`scripts/validate_raw.py` applies versioned row-level rules to landed batches:
+source key/timestamp consistency, required fields, enum domains, numeric bounds,
+status/time combinations and references to landed parent rows. Invalid rows stay
+in immutable raw storage; their findings appear through
+`zepic_raw.quarantined_records`, while `zepic_raw.validated_records` excludes
+those rows for the latest completed ruleset. Validation never changes extraction
+watermarks. A row with any finding is quarantined, while the remaining rows in
+its batch stay eligible.
+
+Validate every batch not yet processed under rule version `v1`, or target one
+batch explicitly:
+
+```sh
+.venv/bin/python scripts/validate_raw.py
+.venv/bin/python scripts/validate_raw.py --batch-id 1
+```
+
+Quality run keys are `(batch_id, rule_version)`. Re-running an existing batch
+returns its saved result without adding duplicate findings. Each batch's quality
+run and findings commit atomically. The current raw checkpoint validated all 27
+batches and 14,873 rows: all passed, with zero quarantine findings. A temporary
+database test injected an invalid customer tier and verified that the raw row
+and watermark remained unchanged while one finding was quarantined.
+
+The first ruleset mirrors local row constraints and checks raw metadata and
+landed foreign keys. It does not yet reconcile order totals against summed item
+amounts; that cross-table aggregate check can be added as a later ruleset.
+
+Run all 51 tests, including temporary-PostgreSQL integration tests, with:
 
 ```sh
 ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v

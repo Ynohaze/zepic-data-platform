@@ -11,10 +11,9 @@ Preview a date range, then apply it (30 days includes January 2 through January 
 .venv/bin/python scripts/run_simulation.py --start-date 2026-01-02 --days 30 --resume --apply
 ```
 
-This local database has completed that range: 3,137 orders, 9,306 items,
-550 production orders/runs, 3,018 shipped orders, 119 pending orders and 659
-inventory units. The pending orders were created on January 31. The next date
-is February 1; no extra confirmation-only day was added.
+That original Phase 1.6 checkpoint had 3,137 orders, 9,306 items, 550 production
+orders/runs, 3,018 shipped orders and 119 pending orders. Phase 2 later advanced
+the local simulation by one day; its current counts are recorded below.
 
 - `--days` accepts 1–366, default 30. Config overrides: `--daily-config` and
   `--production-config`. They default to the existing Phase 1.4/1.5 JSON files.
@@ -47,8 +46,52 @@ Tests include a complete 30-day run, stock conservation, repeat resume, recovery
 after a late production/shipping failure, and simultaneous runners. Run them
 with the existing `ZEPIC_DB_TESTS=1` command below. This completes the successful
 operational simulation path; maintenance/failure generation remains deferred.
-The database stores current row states, not every transition. Later incremental
-ingestion tests should extract between simulated days to observe successive updates.
+The database stores current row states, not every transition. Phase 2 demonstrates
+incremental pulls between simulated days; it does not retain intermediate events.
+
+## Phase 2 source API and raw ingestion
+
+The first extraction slice exposes `orders`, `order_items` and `inventory`.
+It reads only from the operational schema. The API uses a table allowlist, a
+maximum page size of 1,000 and keyset ordering by `(updated_at, primary key)`.
+Money is serialized as decimal strings and timestamps as UTC ISO-8601 values.
+
+For each table, the extractor first reads a fixed upper-bound tuple, then walks
+pages strictly after its stored lower cursor and through that upper bound. Pause
+the simulator while extracting: the tuple stabilizes pagination, while pausing
+writes gives all HTTP pages one consistent source state. This is current-state
+extraction, not change-data capture; transitions committed between pulls cannot
+be reconstructed. Raw rows retain the complete source payload and are append-only
+per extraction batch. The client commits each table's batch rows, batch metadata
+and watermark in one transaction. Tables advance independently; failed table
+batches roll back and are safe to retry. Empty tables are marked initialized
+without inventing a timestamp watermark.
+
+Run the API and extractor in separate terminals:
+
+```sh
+.venv/bin/uvicorn src.source_api:app --host 127.0.0.1 --port 8000
+.venv/bin/python scripts/extract_to_raw.py --table all
+```
+
+The extractor creates `zepic_raw` objects from `database/raw_schema.sql` on
+first use. Repeat the extraction after advancing one simulation day to see
+inserts and updates. Keep the API bound to localhost for this local MVP; network
+authentication and concurrent source writes are outside this slice.
+
+The verified baseline held 3,137 orders, 9,306 items and 20 inventory rows.
+After applying February 1 and extracting again, the raw batches contained 97
+new orders, 119 updated orders, 309 new items and 20 updated inventory rows.
+An immediate third pull wrote three empty batches and left all watermarks
+unchanged. The operational database now has 3,234 orders, 9,615 items,
+570 completed production orders/runs, 3,137 shipped orders, 97 pending orders
+and 812 inventory units. Next simulation date: February 2, 2026.
+
+Run all 43 tests, including temporary-PostgreSQL integration tests, with:
+
+```sh
+ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
+```
 
 ## Phase 1.5 production and fulfillment
 

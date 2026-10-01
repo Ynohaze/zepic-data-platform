@@ -1,8 +1,7 @@
 # Zepic — Phase 2 session handoff
 
-整理日期：2026-10-01（Australia/Perth）。这是新 session 的首读文件。
-当前目标是从已完成的业务模拟进入「源数据 API + watermark 增量抽取」。
-本文件区分已实现事实与下一阶段建议；不要把建议当成已批准的技术选型。
+整理日期：2026-10-01（Australia/Perth）。Phase 2 MVP 已在本 session 完成。
+当前事实和后续建议分开记录；MVP 技术选型已经由用户确认。
 
 ## 1. 工作目录与协作规则
 
@@ -13,8 +12,7 @@
 - 每组实质修改后展示文件列表、git diff，并解释改变的业务行为与验证结果。
 - 用户希望理解实现，新增业务规则先说明；避免悄悄改变已确定的 schema 或扩成 ERP。
 - `.env` 保存本机连接信息，已被忽略；不要打印、提交密码。`.venv` 同样忽略。
-- 本文件创建前工作区干净，本地比已知 `origin/main` 领先 4 个 commit。
-  本 handoff 提交后还会新增一个文档 commit；新 session 先检查 `git status -sb`。
+- Phase 2 改动目前尚未提交。新 session 先检查 `git status -sb`。
 
 主要提交：
 
@@ -50,33 +48,37 @@
 | `scripts/generate_daily_operations.py` | 单日订单生成与确认 |
 | `scripts/run_production_planning.py` | 单日生产、入库与整单发货 |
 | `scripts/run_simulation.py` | 多日编排，每天一个外层事务，支持 `--resume` |
+| `src/source_api.py` | FastAPI 只读源 API；orders、order_items、inventory |
+| `scripts/extract_to_raw.py` | HTTP 分页抽取；raw batch 与逐表 watermark 原子提交 |
+| `database/raw_schema.sql` | `zepic_raw` raw 记录、批次与 watermark 表 |
 | `tests/` | 单元测试与独立临时 PostgreSQL 库集成测试 |
 | `PROJECT_HANDOFF.md` | 详细历史决策/验收记录；较早章节不是当前数据库状态 |
 
-当前没有 API 服务、抽取客户端、raw 层、watermark 存储、dbt 或 Airflow。
-运行依赖为 psycopg[binary]、python-dotenv；本机验证环境为 Python 3.14.6。
+尚未实现 dbt 或 Airflow。运行依赖为 psycopg[binary]、python-dotenv、FastAPI
+和 Uvicorn；本机验证环境为 Python 3.14.6。
 
 ## 3. 当前数据检查点
 
-最后验证：2026-10-01，模拟已完成 **2026-01-02 至 2026-01-31，共 30 天**。
-下一个模拟日是 **2026-02-01**。以下是最近核验值，新 session 应先只读确认。
+最后验证：2026-10-01。Phase 2 baseline 覆盖 2026-01-02 至 2026-01-31；随后
+模拟并增量抽取了 2026-02-01。下一个模拟日是 **2026-02-02**。新 session
+应先只读确认，不要重复推进 2 月 1 日。
 
 | 表/指标 | 数量 |
 |---|---:|
 | customers | 100（standard 70 / silver 20 / gold 10） |
 | products | 20 |
 | machines | 5，全部 available |
-| inventory | 20 行，库存总件数 659 |
-| orders | 3,137 |
-| order_items | 9,306 |
-| production_orders | 550，全部 completed |
-| production_runs | 550，全部 completed |
+| inventory | 20 行，库存总件数 812 |
+| orders | 3,234 |
+| order_items | 9,615 |
+| production_orders | 570，全部 completed |
+| production_runs | 570，全部 completed |
 | maintenance_records | 0 |
-| shipped / pending / confirmed 订单 | 3,018 / 119 / 0 |
+| shipped / pending / confirmed 订单 | 3,137 / 97 / 0 |
 
-119 张 pending 是 1 月 31 日的新订单，不是缺货积压。
-订单金额、逐产品库存守恒、非负库存、机器运行不重叠和发货时间已核验。
-最新完整测试共 **32 项通过**，数据库测试使用自动清理的独立临时库。
+97 张 pending 是 2 月 1 日的新订单，不是缺货积压。订单金额、逐产品库存
+守恒、非负库存、机器运行不重叠和发货时间均已由模拟器及测试核验。Phase 2
+全套验证为 **43 项通过**，数据库测试使用自动清理的独立临时库。
 
 ## 4. 不要改变的业务与时间语义
 
@@ -110,32 +112,36 @@
 6. 完整一天在一个事务内提交，外部只能看见提交后的行状态。计划/运行中间状态、
    同日 confirmed → shipped、库存先增后减不会全部保留为历史事件。
    这是 current-state 增量抽取，不是 CDC/event log；不要宣称能还原所有中间状态。
-7. 首先对现有 30 天做 baseline 抽取并验证，再推进 2 月 1 日、再次抽取，才能
-   展示旧 pending 订单更新、旧库存更新、新订单/明细/生产记录插入。
-   **不要在建立 baseline 之前再一次性推进 365 天。**
+7. 已先对现有 30 天做 baseline，再推进 2 月 1 日并增量抽取；验证捕获了旧
+   pending 订单和库存更新，以及新订单/明细插入。未来改变 baseline 次序时，
+   仍不要在 baseline 前一次性推进 365 天。
 8. 跨 HTTP 页的一致性需要明确策略：复合游标并不能单独解决并发修改。
    MVP 可先约定抽取期间暂停模拟写入，固定批次上界；若支持并发，另行设计
    快照/重叠窗口及幂等策略，不能仅以稳定排序声称无漏数。
 
-## 6. Phase 2 建议起步范围（尚待讨论/确认）
+## 6. Phase 2 已实现范围
 
-已确定方向是「通过源 API 抽取到 raw，并维护可恢复的增量进度」。具体 API
-框架、接口、分页契约、raw 目的地和 watermark 存储尚未实现/锁定。
+用户确认了 FastAPI + 同库 PostgreSQL `zepic_raw` + 复合 watermark 方案。
 
-建议先设计一个小闭环，再扩展全部表：
+- API 白名单只允许 `orders`、`order_items`、`inventory`。用 `(updated_at,
+  主键)` 升序 keyset 分页，单页最大 1,000 行；批次先固定最大复合键，再按
+  `<= upper` 取数。Decimal 输出十进制字符串，TIMESTAMPTZ 输出带 `Z` 的 UTC。
+- 客户端以来源表为单位独立抽取。raw payload 保留完整行；批次 metadata、
+  raw 行和 watermark 在同一事务中提交。失败整批回滚；重试使用有界 HTTP
+  退避。空批次写入 0 行批次记录，watermark 不移动。空表标为 initialized，
+  不用运行时钟虚构来源 watermark。
+- MVP 要求抽取期间暂停模拟写入。复合游标和固定上界解决稳定排序/分页，
+  但并发源写仍不在 MVP 内；不是 CDC，也不能重建事务内部的短暂状态。
+- 首次 baseline 从 2026 年 1 月数据抽取；之后模拟 2 月 1 日并再次抽取。
+  扩展其他 6 张表、并发快照与 Phase 3 数据质量属于后续工作。
 
-1. 讨论 API/抽取契约：表白名单、时间过滤、稳定分页、批次上界、金额序列化。
-   金额保持 Decimal 精度；时间统一输出带时区的 UTC 字符串。
-2. 实现只读源 API；建议先覆盖 orders、order_items、inventory，分别验证
-   「新增+更新」「以新增为主」「持续更新」三种访问模式。FastAPI 只是候选选型。
-3. 客户端通过 HTTP 分页读取并落 raw；保留来源表、原始主键和抽取批次信息。
-   原始业务数据与抽取元数据不要混成同一业务字段。
-4. 全批次成功持久化后再提交 watermark；失败、重试、同时间分页、空批次都应测试。
-   最低限度的安全重试不可省略；完整清洗/隔离/幂等层主要属于后续 Phase 3。
-5. baseline → 单日模拟 → 第二次增量 → 对账，证明同时捕获 INSERT 和 UPDATE。
-   再扩展到剩余业务表；maintenance 当前为空，要验证空表行为。
+已应用 `database/raw_schema.sql` 到 `zepic_operational`。Raw batch 1–3 为
+baseline：orders 3,137、order_items 9,306、inventory 20 行。Batch 4–6 为
+2 月 1 日增量：orders 216（97 INSERT、119 UPDATE）、order_items 309 INSERT、
+inventory 20 UPDATE。Batch 7–9 是立即重跑所得空批次，均 0 行且 watermark
+未变。逐表 watermarks 仍是源记录时间，不是现实抽取时间。
 
-后续路线：Phase 3 数据质量/隔离/幂等；Phase 4 warehouse + dbt；Phase 5 Airflow
+后续路线：Phase 3 数据质量/隔离/幂等并扩展全表；Phase 4 warehouse + dbt；Phase 5 Airflow
 编排；Phase 6 portfolio 整理。不要现在加入 Kafka、云部署、Spark 或额外 ERP 表。
 
 ## 7. 新 session 可用命令
@@ -153,12 +159,11 @@ ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
 Docker 未运行时先启动 Docker Desktop，再 `docker compose up -d --wait`，不要删 volume。
 库连接信息从 `.env` 读取；不要把实际密码写入新配置或 handoff。
 
-baseline 完成后，推进一天的命令（现在不要为了准备 handoff 就执行）：
+运行本地 API 和增量抽取：
 
 ```sh
-.venv/bin/python scripts/run_simulation.py --start-date 2026-02-01 --days 1
-.venv/bin/python scripts/run_simulation.py --start-date 2026-02-01 --days 1 --apply
+.venv/bin/uvicorn src.source_api:app --host 127.0.0.1 --port 8000
+.venv/bin/python scripts/extract_to_raw.py --table all
 ```
 
-新 session 的第一步：阅读本文件和 schema，核对工作目录/Git/数据库检查点，
-然后先与用户确认 Phase 2 API 与 watermark 的最小设计，再实现。
+抽取前暂停模拟器。不要重复应用 2026-02-01；下一模拟日为 2026-02-02。

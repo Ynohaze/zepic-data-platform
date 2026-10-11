@@ -115,11 +115,30 @@ batches and 14,873 rows: all passed, with zero quarantine findings. A temporary
 database test injected an invalid customer tier and verified that the raw row
 and watermark remained unchanged while one finding was quarantined.
 
-The first ruleset mirrors local row constraints and checks raw metadata and
-landed foreign keys. It does not yet reconcile order totals against summed item
-amounts; that cross-table aggregate check can be added as a later ruleset.
+The row-level ruleset mirrors local row constraints and checks raw metadata and
+landed foreign keys. After all raw batches have been validated, reconcile current
+order headers against the latest current-state item rows:
 
-Run all 51 tests, including temporary-PostgreSQL integration tests, with:
+```sh
+.venv/bin/python scripts/validate_raw.py
+.venv/bin/python scripts/reconcile_order_totals.py
+```
+
+The reconciliation uses exact decimal arithmetic for `quantity * unit_price`,
+reports orders with missing details separately, and skips an order if its header
+or any current detail row was quarantined by row-level validation. Runs and
+findings are stored separately in `zepic_raw.order_reconciliation_runs` and
+`zepic_raw.order_reconciliation_findings`; the latest result is available through
+`zepic_raw.latest_order_reconciliation` and
+`zepic_raw.order_reconciliation_issues`. It does not modify raw rows or
+watermarks. The same order/item snapshot is idempotent; changed source rows
+produce a new reconciliation run.
+
+The current raw checkpoint reconciled all 3,342 latest orders: 3,342 matched,
+zero mismatched, zero without details, and zero skipped. The combined unit and
+temporary-PostgreSQL suite has 53 passing tests.
+
+Run all 53 tests, including temporary-PostgreSQL integration tests, with:
 
 ```sh
 ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v

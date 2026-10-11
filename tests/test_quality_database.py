@@ -1,6 +1,7 @@
 """Opt in with ZEPIC_DB_TESTS=1; tests create and remove a unique test DB."""
 
 from datetime import datetime, timezone
+from decimal import Decimal
 import os
 from pathlib import Path
 import unittest
@@ -8,6 +9,7 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
+from scripts.reconcile_order_totals import reconcile_order_totals
 from scripts.validate_raw import validate_batch
 
 
@@ -101,6 +103,101 @@ class RawQualityDatabaseTests(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.quarantined_records "
                                            "WHERE batch_id=%s AND source_primary_key=17",
                                            (self.batch_id,)).fetchone()[0], 1)
+
+    def _insert_validated_batch(self, table, rows, updated=None):
+        updated = updated or self.updated
+        primary_keys = {
+            "products": "product_id",
+            "orders": "order_id",
+            "order_items": "order_item_id",
+        }
+        primary_key = primary_keys[table]
+        keys = [row[primary_key] for row in rows]
+        batch_id = self.conn.execute(
+            "INSERT INTO zepic_raw.extraction_batches "
+            "(source_table, upper_updated_at, upper_primary_key, row_count, started_at, completed_at) "
+            "VALUES (%s,%s,%s,%s,%s,%s) RETURNING batch_id",
+            (table, updated, max(keys), len(rows), updated, updated),
+        ).fetchone()[0]
+        with self.conn.cursor() as cur:
+            cur.executemany(
+                "INSERT INTO zepic_raw.records "
+                "(batch_id, source_table, source_primary_key, source_updated_at, payload, extracted_at) "
+                "VALUES (%s,%s,%s,%s,%s,%s)",
+                [(batch_id, table, row[primary_key], updated, Jsonb(row), updated) for row in rows],
+            )
+        validate_batch(self.conn, batch_id)
+        return batch_id
+
+    def _seed_reconciliation_data(self):
+        validate_batch(self.conn, self.batch_id)
+        self._insert_validated_batch("products", [{
+            "product_id": 1, "sku": "P-1", "product_name": "Product",
+            "unit_price": "2.00", "batch_multiple": 1, "is_active": True,
+            "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z",
+        }])
+        self._insert_validated_batch("orders", [
+            {"order_id": 100, "customer_id": 17, "status": "pending", "total_amount": "4.00",
+             "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"},
+            {"order_id": 101, "customer_id": 17, "status": "pending", "total_amount": "8.00",
+             "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"},
+            {"order_id": 102, "customer_id": 17, "status": "pending", "total_amount": "0.00",
+             "created_at": "2026-01-01T00:00:00Z", "updated_at": "2026-01-01T00:00:00Z"},
+        ])
+        self._insert_validated_batch("order_items", [
+            {"order_item_id": 301, "order_id": 100, "product_id": 1, "quantity": 2,
+             "unit_price": "2.00", "created_at": "2026-01-01T00:00:00Z",
+             "updated_at": "2026-01-01T00:00:00Z"},
+            {"order_item_id": 302, "order_id": 101, "product_id": 1, "quantity": 3,
+             "unit_price": "2.00", "created_at": "2026-01-01T00:00:00Z",
+             "updated_at": "2026-01-01T00:00:00Z"},
+        ])
+
+    def test_reconciles_latest_order_and_item_totals_idempotently(self):
+        self._seed_reconciliation_data()
+
+        first = reconcile_order_totals(self.conn)
+
+        self.assertEqual((first["input_orders"], first["checked_orders"], first["matched_orders"],
+                          first["mismatched_orders"], first["missing_item_orders"], first["skipped_orders"]),
+                         (3, 3, 1, 1, 1, 0))
+        issues = self.conn.execute(
+            "SELECT order_id, rule_code, order_total, items_total FROM zepic_raw.order_reconciliation_issues "
+            "ORDER BY order_id").fetchall()
+        self.assertEqual([(row[0], row[1]) for row in issues],
+                         [(101, "order_total_mismatch"), (102, "order_items_missing")])
+        self.assertEqual((issues[0][2], issues[0][3]), (Decimal("8.00"), Decimal("6.00")))
+
+        repeated = reconcile_order_totals(self.conn)
+        self.assertTrue(repeated["skipped"])
+        self.assertEqual(repeated["run_id"], first["run_id"])
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.order_reconciliation_runs").fetchone()[0], 1)
+
+        corrected = {"order_item_id": 302, "order_id": 101, "product_id": 1, "quantity": 4,
+                     "unit_price": "2.00", "created_at": "2026-01-01T00:00:00Z",
+                     "updated_at": "2026-01-02T00:00:00Z"}
+        self._insert_validated_batch("order_items", [corrected],
+                                     updated=datetime(2026, 1, 2, tzinfo=timezone.utc))
+        second = reconcile_order_totals(self.conn)
+        self.assertFalse(second["skipped"])
+        self.assertEqual((second["matched_orders"], second["mismatched_orders"],
+                          second["missing_item_orders"]), (2, 0, 1))
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.order_reconciliation_issues "
+                                           "WHERE rule_code='order_total_mismatch'").fetchone()[0], 0)
+
+    def test_skips_reconciliation_when_an_order_has_a_quarantined_item(self):
+        self._seed_reconciliation_data()
+        bad_item = {"order_item_id": 303, "order_id": 100, "product_id": 1, "quantity": 0,
+                    "unit_price": "10.00", "created_at": "2026-01-01T00:00:00Z",
+                    "updated_at": "2026-01-01T00:00:00Z"}
+        self._insert_validated_batch("order_items", [bad_item])
+
+        result = reconcile_order_totals(self.conn)
+
+        self.assertEqual((result["checked_orders"], result["skipped_orders"],
+                          result["mismatched_orders"]), (2, 1, 1))
+        self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.order_reconciliation_issues "
+                                           "WHERE order_id=100").fetchone()[0], 0)
 
 
 if __name__ == "__main__":

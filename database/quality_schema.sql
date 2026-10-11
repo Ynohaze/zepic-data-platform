@@ -34,6 +34,56 @@ CREATE TABLE IF NOT EXISTS zepic_raw.quality_findings (
 CREATE INDEX IF NOT EXISTS idx_quality_findings_source
     ON zepic_raw.quality_findings(source_table, source_primary_key, rule_code);
 
+CREATE TABLE IF NOT EXISTS zepic_raw.order_reconciliation_runs (
+    run_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    rule_version VARCHAR(40) NOT NULL,
+    validation_rule_version VARCHAR(20) NOT NULL,
+    snapshot_hash CHAR(64) NOT NULL,
+    input_orders BIGINT NOT NULL CHECK (input_orders >= 0),
+    checked_orders BIGINT NOT NULL CHECK (checked_orders >= 0),
+    matched_orders BIGINT NOT NULL CHECK (matched_orders >= 0),
+    mismatched_orders BIGINT NOT NULL CHECK (mismatched_orders >= 0),
+    missing_item_orders BIGINT NOT NULL CHECK (missing_item_orders >= 0),
+    skipped_orders BIGINT NOT NULL CHECK (skipped_orders >= 0),
+    started_at TIMESTAMPTZ NOT NULL,
+    completed_at TIMESTAMPTZ NOT NULL,
+    UNIQUE (rule_version, validation_rule_version, snapshot_hash),
+    CHECK (input_orders = checked_orders + skipped_orders),
+    CHECK (checked_orders = matched_orders + mismatched_orders + missing_item_orders)
+);
+
+CREATE TABLE IF NOT EXISTS zepic_raw.order_reconciliation_findings (
+    run_id BIGINT NOT NULL REFERENCES zepic_raw.order_reconciliation_runs(run_id) ON DELETE CASCADE,
+    batch_id BIGINT NOT NULL,
+    order_id BIGINT NOT NULL,
+    rule_code VARCHAR(80) NOT NULL,
+    order_total NUMERIC(12,2) NOT NULL,
+    items_total NUMERIC(20,2) NOT NULL,
+    detail_count BIGINT NOT NULL CHECK (detail_count >= 0),
+    reason TEXT NOT NULL,
+    PRIMARY KEY (run_id, batch_id, order_id, rule_code),
+    FOREIGN KEY (batch_id, order_id)
+        REFERENCES zepic_raw.records(batch_id, source_primary_key) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_reconciliation_findings_order
+    ON zepic_raw.order_reconciliation_findings(order_id, rule_code);
+
+CREATE OR REPLACE VIEW zepic_raw.latest_order_reconciliation AS
+SELECT r.*
+FROM zepic_raw.order_reconciliation_runs r
+WHERE r.run_id = (
+    SELECT run_id
+    FROM zepic_raw.order_reconciliation_runs
+    ORDER BY completed_at DESC, run_id DESC
+    LIMIT 1
+);
+
+CREATE OR REPLACE VIEW zepic_raw.order_reconciliation_issues AS
+SELECT f.*
+FROM zepic_raw.order_reconciliation_findings f
+JOIN zepic_raw.latest_order_reconciliation r USING (run_id);
+
 CREATE OR REPLACE VIEW zepic_raw.quarantined_records AS
 SELECT r.*, q.rule_version, f.rule_code, f.reason, f.detected_at
 FROM zepic_raw.records r

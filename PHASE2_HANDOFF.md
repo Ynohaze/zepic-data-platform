@@ -150,10 +150,10 @@ Feb 2 增量/空批次。当前 raw 共 14,873 行；maintenance 的 watermark �
 `initialized=true`、键值为空。逐表 watermarks 记录来源 `updated_at`，不是
 现实抽取时间。不同来源表独立初始化，Feb 2 才达到共同的后续增量检查点。
 
-后续路线：Phase 3 补充跨表对账规则；Phase 4 warehouse + dbt；Phase 5 Airflow
-编排；Phase 6 portfolio 整理。不要现在加入 Kafka、云部署、Spark 或额外 ERP 表。
+后续路线：Phase 4 warehouse + dbt；Phase 5 Airflow 编排；Phase 6 portfolio 整理。
+不要现在加入 Kafka、云部署、Spark 或额外 ERP 表。
 
-## 7. Phase 3 v1 raw 质量检查
+## 7. Phase 3 raw 质量检查与订单对账
 
 用户选择质量异常行隔离后继续推进既有 source watermark。已新增
 `database/quality_schema.sql` 和 `scripts/validate_raw.py`：按 batch 与 rule
@@ -161,11 +161,21 @@ version 执行原子、幂等的校验运行；无效行保留在 raw，`quality
 每个 rule violation。`quarantined_records` 与 `validated_records` 视图方便
 分别读取隔离和可用的 raw rows。validator 不更改 raw payload 或 watermark。
 
-v1 覆盖源主键与 updated_at 元数据一致性、必填文本、枚举/类型/数值范围、
-状态与时间字段组合，以及引用表中已落地的外键。它还没有实现订单头金额与
-明细汇总的跨表对账。首次运行验证 27 个 batch、14,873 行：14,873 通过、
-0 隔离。合成集成测试注入非法 customer_tier，验证 raw 与 watermark 不变、
-异常行被隔离；同一个 batch/rule_version 重跑返回既有结果且不重复 findings。
+v1 行级规则覆盖源主键与 updated_at 元数据一致性、必填文本、枚举/类型/数值
+范围、状态与时间字段组合，以及引用表中已落地的外键。首次运行验证 27 个
+batch、14,873 行：14,873 通过、0 隔离。合成集成测试验证非法枚举与表名
+错配会隔离，raw/watermark 不变，同一个 batch/rule_version 重跑不会重复写入。
+
+跨表对账由独立脚本 `scripts/reconcile_order_totals.py` 执行，前提是所有 raw
+batch 已有 v1 行级质量结果。它按 `source_updated_at`、再按 `batch_id` 取每个
+订单和明细的最新状态，使用 Decimal 比较订单头 `total_amount` 与明细
+`quantity * unit_price` 合计。无明细单独记录；订单头或任一当前明细已被行级
+隔离时跳过该订单，避免不完整明细导致误报。对账汇总和 findings 写入独立表，
+并提供 latest-run/issues 视图；不修改 raw payload、行级 findings 或 watermarks。
+同一订单/明细快照的重复运行返回已有 run；来源内容变化会建立新 run。
+
+当前 27 个 batch / 14,873 raw 行的最新状态包含 3,342 个订单：3,342 匹配，
+0 金额不一致、0 无明细、0 跳过。全套 53 项单元及 PostgreSQL 集成测试通过。
 
 ## 8. 新 session 可用命令
 
@@ -178,6 +188,7 @@ docker compose ps
 # 需要 Docker/PostgreSQL 启动；会创建并自动删除独立测试库：
 ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
 .venv/bin/python scripts/validate_raw.py
+.venv/bin/python scripts/reconcile_order_totals.py
 ```
 
 Docker 未运行时先启动 Docker Desktop，再 `docker compose up -d --wait`，不要删 volume。

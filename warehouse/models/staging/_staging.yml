@@ -1,0 +1,125 @@
+version: 2
+
+models:
+  - name: stg_customers
+    description: Latest validated customer version available in raw storage.
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
+      - name: customer_tier
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [standard, silver, gold]
+
+  - name: stg_products
+    description: Latest validated product version available in raw storage.
+    columns:
+      - name: product_id
+        data_tests: [unique, not_null]
+      - name: sku
+        data_tests: [unique, not_null]
+
+  - name: stg_machines
+    description: Latest validated machine version available in raw storage.
+    columns:
+      - name: machine_id
+        data_tests: [unique, not_null]
+      - name: machine_code
+        data_tests: [unique, not_null]
+
+  - name: stg_inventory
+    description: Latest validated current inventory balance per product; this is not a historical snapshot fact.
+    columns:
+      - name: product_id
+        data_tests:
+          - unique
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+  - name: stg_orders
+    description: Latest validated current order header state.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_customers')
+                field: customer_id
+      - name: order_status
+        data_tests:
+          - accepted_values:
+              arguments:
+                values: [pending, confirmed, shipped]
+
+  - name: stg_order_items
+    description: Latest validated order-line versions, retaining the transactional price snapshot.
+    columns:
+      - name: order_item_id
+        data_tests: [unique, not_null]
+      - name: order_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_orders')
+                field: order_id
+      - name: product_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+  - name: stg_production_orders
+    description: Latest validated production-order state.
+    columns:
+      - name: production_order_id
+        data_tests: [unique, not_null]
+      - name: product_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_products')
+                field: product_id
+
+  - name: stg_production_runs
+    description: Latest validated production-run state.
+    columns:
+      - name: production_run_id
+        data_tests: [unique, not_null]
+      - name: production_order_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_production_orders')
+                field: production_order_id
+      - name: machine_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_machines')
+                field: machine_id
+
+  - name: stg_maintenance_records
+    description: Latest validated maintenance-record state.
+    columns:
+      - name: maintenance_record_id
+        data_tests: [unique, not_null]
+      - name: machine_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('stg_machines')
+                field: machine_id

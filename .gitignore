@@ -5,3 +5,7 @@ __pycache__/
 *.py[cod]
 .venv/
 .DS_Store
+warehouse/target/
+warehouse/logs/
+warehouse/dbt_packages/
+warehouse/.user.yml

@@ -1,0 +1,24 @@
+version: 2
+
+sources:
+  - name: zepic_raw
+    description: Phase 3 records that passed the latest completed row-level ruleset for their extraction batch.
+    schema: zepic_raw
+    tables:
+      - name: validated_records
+        description: Append-only valid raw versions. Staging models select one latest valid version per source primary key.
+        columns:
+          - name: batch_id
+            data_tests: [not_null]
+          - name: source_table
+            data_tests:
+              - not_null
+              - accepted_values:
+                  arguments:
+                    values: [customers, products, machines, inventory, orders, order_items, production_orders, production_runs, maintenance_records]
+          - name: source_primary_key
+            data_tests: [not_null]
+          - name: source_updated_at
+            data_tests: [not_null]
+          - name: payload
+            data_tests: [not_null]

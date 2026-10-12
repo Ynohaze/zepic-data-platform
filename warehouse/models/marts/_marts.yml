@@ -1,0 +1,84 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: Current customer dimension from the latest validated raw versions.
+    columns:
+      - name: customer_id
+        data_tests: [unique, not_null]
+
+  - name: dim_products
+    description: Current product dimension. Prices are catalog prices; order-line facts retain historical transaction prices.
+    columns:
+      - name: product_id
+        data_tests: [unique, not_null]
+      - name: sku
+        data_tests: [unique, not_null]
+
+  - name: dim_machines
+    description: Current machine dimension.
+    columns:
+      - name: machine_id
+        data_tests: [unique, not_null]
+
+  - name: fct_order_lines
+    description: Order-line grain fact using the price captured when the order was created and the order's current status.
+    columns:
+      - name: order_item_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: product_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+
+  - name: fct_production_runs
+    description: One row per production run, enriched with the linked plan and calculated duration and quantity variance.
+    columns:
+      - name: production_run_id
+        data_tests: [unique, not_null]
+      - name: product_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+      - name: machine_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_machines')
+                field: machine_id
+
+  - name: fct_maintenance
+    description: One row per maintenance record. The table can be empty before maintenance simulation is introduced.
+    columns:
+      - name: maintenance_record_id
+        data_tests: [unique, not_null]
+
+  - name: current_inventory
+    description: Current inventory balance and catalog-price retail valuation; not an inventory history fact.
+    columns:
+      - name: product_id
+        data_tests: [unique, not_null]
+      - name: available_quantity
+        data_tests: [not_null]
+
+  - name: agg_daily_orders
+    description: Orders grouped by order creation date and current status. Historical dates can change when an order status changes.
+    columns:
+      - name: order_date
+        data_tests: [not_null]
+      - name: order_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [pending, confirmed, shipped]

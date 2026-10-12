@@ -1,5 +1,9 @@
 # Zepic — Phase 1.6 handoff
 
+**Current project checkpoint: [PHASE4_HANDOFF.md](PHASE4_HANDOFF.md).** It covers
+the validated raw-to-warehouse dbt implementation and current analytics counts.
+The Phase 1 history below remains useful for operational business semantics.
+
 **Starting Phase 2 in a new session? Read [PHASE2_HANDOFF.md](PHASE2_HANDOFF.md)
 first.** It consolidates the current checkpoint, collaboration rules, source
 timestamp semantics and proposed next steps. Sections below retain phase history.

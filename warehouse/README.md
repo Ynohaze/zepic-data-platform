@@ -1,26 +1,31 @@
 # Zepic warehouse
 
-This dbt project transforms Phase 3's `zepic_raw.validated_records` view into
-typed current-state models. It never reads the operational tables directly and
-does not update raw records, extraction watermarks, or quality findings.
+This dbt project turns append-only raw source versions and Phase 3 quality
+results into physical Silver tables and analytics-ready Gold tables. It never
+reads operational tables directly and does not update raw records, extraction
+watermarks, or quality findings.
 
-## Layers and grain
+## Layers
 
-- `zepic_staging`: nine views, one per source table. Each view selects the latest
-  validated raw version per source primary key using `source_updated_at` and
-  `batch_id`, then casts JSON payload fields to warehouse types.
-- `zepic_analytics`: current dimensions, order-line and operations facts, current
-  inventory, and daily order aggregates.
-- `fct_order_lines` is one row per order item and uses its captured unit price.
+- `zepic_staging`: ten materialized Silver tables. Nine represent typed current
+  state for the source entities; `stg_order_versions` retains all observed valid
+  order versions for lifecycle analysis.
+- `zepic_analytics`: eight Gold tables: three current dimensions, four business
+  facts, and current inventory.
+- `fct_orders` is one row per order and contains current header measures plus
+  observed lifecycle milestones.
+- `fct_order_lines` is one row per order item and uses its captured sale price.
 - `fct_production_runs` is one row per production run.
 - `fct_maintenance` is one row per maintenance record and is currently empty.
-- `current_inventory` is a balance table, not a periodic snapshot.
-- `agg_daily_orders` groups by order creation date and current order status. A
-  historical date can therefore change when a pending order is later shipped.
+- `current_inventory` is a current balance, not a periodic snapshot.
 
-The source is current-state incremental extraction rather than CDC. dbt can
-rebuild the latest observed state but cannot reconstruct status transitions or
-inventory movements that were never extracted.
+The old `agg_daily_orders` model is intentionally absent: creation-date groups
+by current status were mutable and easy to misinterpret. Aggregate `fct_orders`
+with an explicitly chosen event date instead.
+
+Read [DESIGN.md](DESIGN.md) for the complete decisions, including physical
+Silver materialization, the no-stale-fallback rule, model grains, and lifecycle
+limitations.
 
 ## Run locally
 
@@ -40,8 +45,11 @@ the committed environment-variable profile. Other dbt commands work the same way
 .venv/bin/python scripts/run_warehouse.py debug
 .venv/bin/python scripts/run_warehouse.py test
 .venv/bin/python scripts/run_warehouse.py docs generate
+.venv/bin/python scripts/run_warehouse.py docs serve
 ```
 
-`dbt build` creates or replaces only the `zepic_staging` and `zepic_analytics`
-schemas. Tests cover keys, relationships, status domains, nonnegative inventory,
-production terminal fields, and exact order-header versus line-total agreement.
+The transformation is code-first. `docs generate` produces an interactive dbt
+lineage/catalog site at `target/index.html`; Phase 4 has no always-on dashboard.
+Tests cover keys, relationships, domains, latest-invalid suppression, lifecycle
+chronology, inventory nonnegativity, production terminal fields, and exact order
+header versus line-total agreement.

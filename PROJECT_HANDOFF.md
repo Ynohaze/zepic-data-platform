@@ -1,7 +1,8 @@
 # Zepic — Phase 1.6 handoff
 
 **Current project checkpoint: [PHASE4_HANDOFF.md](PHASE4_HANDOFF.md).** It covers
-the validated raw-to-warehouse dbt implementation and current analytics counts.
+the revised physical Silver-to-Gold dbt implementation and current analytics
+counts. The durable design decisions are in [warehouse/DESIGN.md](warehouse/DESIGN.md).
 The Phase 1 history below remains useful for operational business semantics.
 
 **Starting Phase 2 in a new session? Read [PHASE2_HANDOFF.md](PHASE2_HANDOFF.md)

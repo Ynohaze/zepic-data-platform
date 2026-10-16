@@ -2,7 +2,7 @@ version: 2
 
 models:
   - name: stg_customers
-    description: Latest validated customer version available in raw storage.
+    description: Materialized Silver current customer state. A quarantined latest version suppresses the key instead of falling back to an older value.
     columns:
       - name: customer_id
         data_tests: [unique, not_null]
@@ -13,7 +13,7 @@ models:
                 values: [standard, silver, gold]
 
   - name: stg_products
-    description: Latest validated product version available in raw storage.
+    description: Materialized Silver current product state.
     columns:
       - name: product_id
         data_tests: [unique, not_null]
@@ -21,7 +21,7 @@ models:
         data_tests: [unique, not_null]
 
   - name: stg_machines
-    description: Latest validated machine version available in raw storage.
+    description: Materialized Silver current machine state.
     columns:
       - name: machine_id
         data_tests: [unique, not_null]
@@ -41,7 +41,7 @@ models:
                 field: product_id
 
   - name: stg_orders
-    description: Latest validated current order header state.
+    description: Materialized Silver current order header state.
     columns:
       - name: order_id
         data_tests: [unique, not_null]
@@ -54,6 +54,21 @@ models:
                 field: customer_id
       - name: order_status
         data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [pending, confirmed, shipped]
+
+  - name: stg_order_versions
+    description: Materialized Silver history of every validated order version observed by incremental extraction; missed source states cannot be reconstructed.
+    columns:
+      - name: raw_batch_id
+        data_tests: [not_null]
+      - name: order_id
+        data_tests: [not_null]
+      - name: order_status
+        data_tests:
+          - not_null
           - accepted_values:
               arguments:
                 values: [pending, confirmed, shipped]

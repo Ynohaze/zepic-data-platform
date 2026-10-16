@@ -13,7 +13,7 @@ clean-targets: ["target", "dbt_packages", "logs"]
 models:
   zepic_warehouse:
     staging:
-      +materialized: view
+      +materialized: table
       +schema: zepic_staging
     marts:
       +materialized: table

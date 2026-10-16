@@ -4,11 +4,12 @@ DE flagship — local PostgreSQL with order, production and fulfillment simulati
 
 ## Phase 4 warehouse and dbt
 
-The dbt project in `warehouse/` reads only Phase 3's validated raw view and builds
-typed current-state models in `zepic_staging` and analytics-ready tables in
-`zepic_analytics`. It contains all nine source staging models, customer/product/
-machine dimensions, order-line/production/maintenance facts, current inventory,
-and daily order metrics.
+The dbt project in `warehouse/` combines append-only raw versions with Phase 3
+quality results, materializes typed Silver tables in `zepic_staging`, and builds
+analytics-ready Gold tables in `zepic_analytics`. It contains all nine source
+current-state models plus validated order-version history, customer/product/
+machine dimensions, order/order-line/production/maintenance facts, and current
+inventory.
 
 ```sh
 .venv/bin/python -m pip install -r requirements.txt
@@ -20,7 +21,8 @@ and daily order metrics.
 The wrapper loads the ignored root `.env`; `warehouse/profiles.yml` contains only
 environment-variable references. dbt tests enforce keys, relationships, domains,
 inventory nonnegativity, production terminal fields, and order total agreement.
-See `warehouse/README.md` for model grains and current-state limitations.
+See `warehouse/DESIGN.md` for the layer boundary, model grains, latest-invalid
+record policy, lifecycle limitations, and dbt documentation UI.
 
 ## Phase 1.6 multi-day simulation
 

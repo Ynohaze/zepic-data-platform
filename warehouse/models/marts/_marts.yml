@@ -39,6 +39,34 @@ models:
                 to: ref('dim_products')
                 field: product_id
 
+  - name: fct_orders
+    description: One row per current valid order. pending_at is the known creation event; later milestones are populated only when that status was captured by extraction.
+    columns:
+      - name: order_id
+        data_tests: [unique, not_null]
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+      - name: order_status
+        data_tests:
+          - not_null
+          - accepted_values:
+              arguments:
+                values: [pending, confirmed, shipped]
+      - name: line_count
+        data_tests: [not_null]
+      - name: unit_count
+        data_tests: [not_null]
+      - name: pending_at
+        data_tests: [not_null]
+      - name: lifecycle_fully_observed
+        description: True only when raw history contains pending, confirmed, and shipped versions. False does not mean the business event did not happen.
+        data_tests: [not_null]
+
   - name: fct_production_runs
     description: One row per production run, enriched with the linked plan and calculated duration and quantity variance.
     columns:
@@ -70,15 +98,3 @@ models:
         data_tests: [unique, not_null]
       - name: available_quantity
         data_tests: [not_null]
-
-  - name: agg_daily_orders
-    description: Orders grouped by order creation date and current status. Historical dates can change when an order status changes.
-    columns:
-      - name: order_date
-        data_tests: [not_null]
-      - name: order_status
-        data_tests:
-          - not_null
-          - accepted_values:
-              arguments:
-                values: [pending, confirmed, shipped]

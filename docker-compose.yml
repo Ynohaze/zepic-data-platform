@@ -16,6 +16,8 @@ x-airflow-common: &airflow-common
     AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@postgres/${AIRFLOW_DB:-airflow}
     AIRFLOW__API_AUTH__JWT_SECRET: ${AIRFLOW_JWT_SECRET:-local_only_airflow_jwt_secret}
     AIRFLOW__SCHEDULER__ENABLE_HEALTH_CHECK: "true"
+    DBT_LOG_PATH: /tmp/zepic-dbt/logs
+    DBT_TARGET_PATH: /tmp/zepic-dbt/target
     POSTGRES_DB: ${POSTGRES_DB:?Set POSTGRES_DB in .env}
     POSTGRES_USER: ${POSTGRES_USER:?Set POSTGRES_USER in .env}
     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
@@ -27,8 +29,6 @@ x-airflow-common: &airflow-common
   volumes:
     - .:/opt/airflow/zepic:ro
     - airflow_logs:/opt/airflow/logs
-    - dbt_logs:/opt/airflow/zepic/warehouse/logs
-    - dbt_target:/opt/airflow/zepic/warehouse/target
   networks:
     - zepic-network
 
@@ -155,8 +155,6 @@ services:
 volumes:
   zepic_postgres_data:
   airflow_logs:
-  dbt_logs:
-  dbt_target:
 
 networks:
   zepic-network:

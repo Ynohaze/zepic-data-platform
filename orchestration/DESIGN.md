@@ -80,6 +80,10 @@ Global Airflow parallelism is capped at four for a laptop-sized local runtime.
 The nine extraction tasks remain independent parallel branches in the DAG, but
 Airflow executes at most four task instances at once.
 
+The project checkout is mounted read-only in Airflow containers. dbt therefore
+writes its runtime logs and compiled artifacts to `/tmp/zepic-dbt`; warehouse
+tables and views remain persisted in PostgreSQL.
+
 The second checkpoint built both custom images, initialized the separate Airflow
 database, and ran one Airflow DAG processor pass. Airflow discovered one paused
 `zepic_raw_to_gold` DAG with 14 tasks and zero import errors. It did not trigger a

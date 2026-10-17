@@ -36,6 +36,8 @@ class OrchestrationContractTests(unittest.TestCase):
         self.assertIn("image: zepic-airflow:3.3.2", compose)
         self.assertIn("AIRFLOW__CORE__EXECUTOR: LocalExecutor", compose)
         self.assertIn("AIRFLOW__CORE__DAGS_FOLDER: /opt/airflow/zepic/orchestration/dags", compose)
+        self.assertIn("DBT_LOG_PATH: /tmp/zepic-dbt/logs", compose)
+        self.assertIn("DBT_TARGET_PATH: /tmp/zepic-dbt/target", compose)
         self.assertIn("driver: bridge", compose)
 
     def test_unknown_source_table_is_rejected(self):

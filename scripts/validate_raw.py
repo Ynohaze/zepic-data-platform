@@ -260,9 +260,38 @@ def validate_pending(connection, now=lambda: datetime.now(timezone.utc)):
     return [validate_batch(connection, batch_id, now=now) for batch_id in batch_ids]
 
 
+def count_latest_quarantined_records(connection):
+    """Count source keys whose latest quality-checked version is quarantined."""
+    with connection.cursor() as cur:
+        cur.execute(
+            "WITH ranked AS ("
+            "SELECT r.batch_id, r.source_table, r.source_primary_key, "
+            "row_number() OVER (PARTITION BY r.source_table, r.source_primary_key "
+            "ORDER BY r.source_updated_at DESC, r.batch_id DESC) AS version_rank "
+            "FROM zepic_raw.records r "
+            "WHERE EXISTS (SELECT 1 FROM zepic_raw.quality_runs q "
+            "WHERE q.batch_id=r.batch_id AND q.rule_version=%s)"
+            ") "
+            "SELECT count(*) FROM ranked latest "
+            "WHERE latest.version_rank=1 AND EXISTS ("
+            "SELECT 1 FROM zepic_raw.quality_findings f "
+            "WHERE f.batch_id=latest.batch_id "
+            "AND f.source_table=latest.source_table "
+            "AND f.source_primary_key=latest.source_primary_key "
+            "AND f.rule_version=%s)",
+            (RULE_VERSION, RULE_VERSION),
+        )
+        return cur.fetchone()[0]
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--batch-id", type=int, help="Validate one batch; defaults to all unvalidated batches")
+    parser.add_argument(
+        "--fail-on-findings",
+        action="store_true",
+        help="Exit nonzero when any latest source record remains quarantined",
+    )
     args = parser.parse_args()
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env", override=False)
@@ -279,6 +308,7 @@ def main():
             conn.execute((ROOT / "database/quality_schema.sql").read_text())
             results = ([validate_batch(conn, args.batch_id)] if args.batch_id is not None
                        else validate_pending(conn))
+            latest_quarantined_records = count_latest_quarantined_records(conn)
     except Exception as exc:
         parser.exit(1, f"Raw validation failed ({type(exc).__name__}); no partial quality run was committed.\n")
     summary = {"rule_version": RULE_VERSION, "batches": len(results),
@@ -286,8 +316,14 @@ def main():
                "valid_rows": sum(result["valid_rows"] for result in results),
                "quarantined_rows": sum(result["quarantined_rows"] for result in results),
                "finding_count": sum(result["finding_count"] for result in results),
+               "latest_quarantined_records": latest_quarantined_records,
                "results": results}
     print(json.dumps(summary, indent=2))
+    if args.fail_on_findings and latest_quarantined_records:
+        parser.exit(
+            1,
+            f"Quality gate failed: {latest_quarantined_records} latest source record(s) are quarantined.\n",
+        )
 
 
 if __name__ == "__main__":

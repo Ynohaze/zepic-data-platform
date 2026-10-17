@@ -1,0 +1,4 @@
+dbt-core>=1.12,<1.13
+dbt-postgres>=1.11,<1.12
+psycopg[binary]>=3.2,<4
+python-dotenv>=1.0,<2

@@ -10,7 +10,7 @@ import uuid
 from psycopg.types.json import Jsonb
 
 from scripts.reconcile_order_totals import reconcile_order_totals
-from scripts.validate_raw import validate_batch
+from scripts.validate_raw import count_latest_quarantined_records, validate_batch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -79,6 +79,7 @@ class RawQualityDatabaseTests(unittest.TestCase):
         repeated = validate_batch(self.conn, self.batch_id)
         self.assertTrue(repeated["skipped"])
         self.assertEqual(repeated["finding_count"], 1)
+        self.assertEqual(count_latest_quarantined_records(self.conn), 1)
         self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.quality_runs").fetchone()[0], 1)
         self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.quality_findings").fetchone()[0], 1)
         self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.records").fetchone()[0], raw_count)
@@ -103,6 +104,34 @@ class RawQualityDatabaseTests(unittest.TestCase):
         self.assertEqual(self.conn.execute("SELECT count(*) FROM zepic_raw.quarantined_records "
                                            "WHERE batch_id=%s AND source_primary_key=17",
                                            (self.batch_id,)).fetchone()[0], 1)
+
+    def test_latest_valid_version_clears_current_quarantine_gate(self):
+        validate_batch(self.conn, self.batch_id)
+        self.assertEqual(count_latest_quarantined_records(self.conn), 1)
+        corrected_at = datetime(2026, 1, 2, tzinfo=timezone.utc)
+        corrected = {
+            "customer_id": 18,
+            "customer_name": "B",
+            "customer_tier": "gold",
+            "created_at": "2026-01-01T00:00:00Z",
+            "updated_at": "2026-01-02T00:00:00Z",
+        }
+        corrected_batch_id = self.conn.execute(
+            "INSERT INTO zepic_raw.extraction_batches "
+            "(source_table, upper_updated_at, upper_primary_key, row_count, started_at, completed_at) "
+            "VALUES ('customers',%s,18,1,%s,%s) RETURNING batch_id",
+            (corrected_at, corrected_at, corrected_at),
+        ).fetchone()[0]
+        self.conn.execute(
+            "INSERT INTO zepic_raw.records "
+            "(batch_id, source_table, source_primary_key, source_updated_at, payload, extracted_at) "
+            "VALUES (%s,'customers',18,%s,%s,%s)",
+            (corrected_batch_id, corrected_at, Jsonb(corrected), corrected_at),
+        )
+
+        validate_batch(self.conn, corrected_batch_id)
+
+        self.assertEqual(count_latest_quarantined_records(self.conn), 0)
 
     def _insert_validated_batch(self, table, rows, updated=None):
         updated = updated or self.updated

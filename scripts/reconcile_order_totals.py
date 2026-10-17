@@ -156,6 +156,11 @@ def reconcile_order_totals(connection, now=lambda: datetime.now(timezone.utc)):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--fail-on-findings",
+        action="store_true",
+        help="Exit nonzero when orders mismatch, lack details, or are skipped",
+    )
     args = parser.parse_args()
     from dotenv import load_dotenv
     load_dotenv(ROOT / ".env", override=False)
@@ -170,9 +175,19 @@ def main():
                              port=os.getenv("POSTGRES_PORT", "5432"), connect_timeout=5,
                              autocommit=True) as conn:
             conn.execute((ROOT / "database/quality_schema.sql").read_text())
-            print(json.dumps(reconcile_order_totals(conn), sort_keys=True))
+            result = reconcile_order_totals(conn)
     except Exception as exc:
         parser.exit(1, f"Order reconciliation failed ({type(exc).__name__}); no partial result was committed.\n")
+    print(json.dumps(result, sort_keys=True))
+    issue_count = result["mismatched_orders"] + result["missing_item_orders"] + result["skipped_orders"]
+    if args.fail_on_findings and issue_count:
+        parser.exit(
+            1,
+            "Order reconciliation gate failed: "
+            f"{result['mismatched_orders']} mismatch(es), "
+            f"{result['missing_item_orders']} missing-detail order(s), and "
+            f"{result['skipped_orders']} skipped order(s).\n",
+        )
 
 
 if __name__ == "__main__":

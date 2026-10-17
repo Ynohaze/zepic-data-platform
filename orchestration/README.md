@@ -29,8 +29,28 @@ docker compose run --rm --no-deps airflow-scheduler \
 ```
 
 The expected result is zero import errors and one paused DAG named
-`zepic_raw_to_gold`. Starting the long-running services and demonstrating a DAG
-failure/recovery are later checkpoints.
+`zepic_raw_to_gold`.
+
+Start the local source API and Airflow UI services:
+
+```sh
+docker compose up -d --no-build \
+  source-api airflow-apiserver airflow-scheduler airflow-dag-processor
+```
+
+Open <http://127.0.0.1:8080> and sign in with `AIRFLOW_ADMIN_USER` and
+`AIRFLOW_ADMIN_PASSWORD`. Their local defaults are `airflow` / `airflow`; change
+them in `.env` if this environment is shared. The DAG remains paused until it is
+explicitly enabled, so opening its Graph view does not run the pipeline.
+
+Stop the UI runtime without deleting PostgreSQL data:
+
+```sh
+docker compose stop \
+  source-api airflow-apiserver airflow-scheduler airflow-dag-processor
+```
+
+Demonstrating a controlled DAG failure and recovery is a later checkpoint.
 
 Do not copy the Airflow quick-start cleanup command `docker compose down
 --volumes` into this project: `zepic_postgres_data` contains the operational and

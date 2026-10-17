@@ -2,6 +2,27 @@
 
 DE flagship — local PostgreSQL with order, production and fulfillment simulation.
 
+## Phase 5 Airflow orchestration
+
+Phase 5 runs the existing extraction, Raw quality, order reconciliation and dbt
+warehouse commands as one observable Airflow DAG. Docker Compose reuses the
+existing PostgreSQL instance, adds a separate Airflow metadata database, and
+connects PostgreSQL, the source API and the Airflow services through an explicit
+bridge network.
+
+```sh
+docker compose up -d --no-build \
+  source-api airflow-apiserver airflow-scheduler airflow-dag-processor
+```
+
+Open <http://127.0.0.1:8080> to inspect the manual `zepic_raw_to_gold` DAG. Its
+nine extraction branches converge on strict Raw validation and order-total
+reconciliation gates before dbt rebuilds Silver and Gold. The accepted local run
+demonstrated extraction retries, blocked downstream tasks, reconciliation-gate
+failure, task-level recovery and a final 14/14 success state. The DAG remains
+paused after acceptance. See [PHASE5_HANDOFF.md](PHASE5_HANDOFF.md) for the final
+architecture, evidence, recovery exercise and operating boundaries.
+
 ## Phase 4 warehouse and dbt
 
 The dbt project in `warehouse/` combines append-only raw versions with Phase 3

@@ -91,8 +91,21 @@ DAG run.
 
 ## Failure and recovery acceptance scenario
 
-The Phase 5 acceptance run will make one quality gate fail without mutating the
-production checkpoint. Airflow must show the gate in red, all downstream tasks
-as blocked, and the command output in the task log. After removing the controlled
-failure and clearing that task, only the failed/downstream path should resume and
-the DAG run should finish successfully.
+The Phase 5 acceptance run can make reconciliation fail without mutating the
+production checkpoint by creating
+`/tmp/zepic-simulate-reconciliation-failure` in the scheduler container. The
+real reconciliation still runs first; the sentinel then makes the task exit
+nonzero with an explicit simulated order-total mismatch message. Airflow must
+show the gate in red and all downstream tasks as blocked. After removing the
+sentinel and clearing that task, only the failed/downstream path should resume
+and the DAG run should finish successfully.
+
+## Acceptance result
+
+On 2026-10-17, manual run
+`manual__2026-10-17T10:36:01.774340+00:00` exercised this scenario. Extraction
+and validation succeeded, reconciliation failed with the explicit controlled
+mismatch log message, and `build_warehouse` plus `complete` were marked
+`upstream_failed`. Removing the sentinel and clearing the reconciliation task
+selected exactly those three task instances. The same run then completed with
+all 14 tasks successful. The DAG was paused again after acceptance.

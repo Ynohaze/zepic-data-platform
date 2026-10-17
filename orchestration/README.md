@@ -50,7 +50,27 @@ docker compose stop \
   source-api airflow-apiserver airflow-scheduler airflow-dag-processor
 ```
 
-Demonstrating a controlled DAG failure and recovery is a later checkpoint.
+To repeat the non-destructive reconciliation failure exercise, create the
+one-shot sentinel before triggering a manual run:
+
+```sh
+docker compose exec airflow-scheduler \
+  touch /tmp/zepic-simulate-reconciliation-failure
+```
+
+After Airflow shows `reconcile_order_totals` as failed and its two downstream
+tasks as blocked, remove the sentinel:
+
+```sh
+docker compose exec airflow-scheduler \
+  rm -f /tmp/zepic-simulate-reconciliation-failure
+```
+
+In the failed task's UI, choose **Clear** and confirm the three affected tasks.
+Airflow reruns reconciliation, `build_warehouse`, and `complete` while retaining
+the successful extraction and validation task instances. Always remove the
+sentinel after the exercise; leaving it present intentionally blocks every
+subsequent run at reconciliation.
 
 Do not copy the Airflow quick-start cleanup command `docker compose down
 --volumes` into this project: `zepic_postgres_data` contains the operational and

@@ -2,6 +2,7 @@ from pathlib import Path
 import unittest
 
 from orchestration.pipeline_contract import (
+    CONTROLLED_RECONCILIATION_FAILURE_SENTINEL,
     RECONCILE_COMMAND,
     SOURCE_TABLES,
     VALIDATE_COMMAND,
@@ -25,6 +26,8 @@ class OrchestrationContractTests(unittest.TestCase):
     def test_quality_steps_are_strict_before_warehouse_build(self):
         self.assertIn("--fail-on-findings", VALIDATE_COMMAND)
         self.assertIn("--fail-on-findings", RECONCILE_COMMAND)
+        self.assertIn(CONTROLLED_RECONCILIATION_FAILURE_SENTINEL, RECONCILE_COMMAND)
+        self.assertIn("simulated order-total mismatch", RECONCILE_COMMAND)
         self.assertEqual(WAREHOUSE_COMMAND, "python scripts/run_warehouse.py build")
 
     def test_dag_file_is_valid_python(self):

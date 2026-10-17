@@ -14,6 +14,9 @@ SOURCE_TABLES = (
 
 PROJECT_DIR = "/opt/airflow/zepic"
 SOURCE_API_URL = "http://source-api:8000"
+CONTROLLED_RECONCILIATION_FAILURE_SENTINEL = (
+    "/tmp/zepic-simulate-reconciliation-failure"
+)
 
 
 def extraction_command(table):
@@ -26,5 +29,10 @@ def extraction_command(table):
 
 
 VALIDATE_COMMAND = "python scripts/validate_raw.py --fail-on-findings"
-RECONCILE_COMMAND = "python scripts/reconcile_order_totals.py --fail-on-findings"
+RECONCILE_COMMAND = (
+    "python scripts/reconcile_order_totals.py --fail-on-findings && "
+    f"if [ -f {CONTROLLED_RECONCILIATION_FAILURE_SENTINEL} ]; then "
+    "echo 'Controlled reconciliation failure: simulated order-total mismatch.' >&2; "
+    "exit 1; fi"
+)
 WAREHOUSE_COMMAND = "python scripts/run_warehouse.py build"

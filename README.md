@@ -1,390 +1,314 @@
 # Zepic Data Platform
 
-DE flagship — local PostgreSQL with order, production and fulfillment simulation.
+Zepic is a local, end-to-end data engineering portfolio project built around a
+synthetic manufacturing and order-fulfilment business. It generates operational
+data, extracts incremental changes through an API, preserves immutable Raw
+versions, enforces data-quality gates, and publishes tested Silver and Gold
+models. Apache Airflow makes the complete Raw-to-Gold path observable and
+recoverable.
 
-## Phase 5 Airflow orchestration
+The project is intentionally laptop-sized: PostgreSQL 16, Python, FastAPI, dbt
+Core and Airflow 3 run in one Docker Compose project. The design focuses on
+transaction boundaries, restart safety, explicit quality rules and honest data
+semantics rather than distributed-system scale.
 
-Phase 5 runs the existing extraction, Raw quality, order reconciliation and dbt
-warehouse commands as one observable Airflow DAG. Docker Compose reuses the
-existing PostgreSQL instance, adds a separate Airflow metadata database, and
-connects PostgreSQL, the source API and the Airflow services through an explicit
-bridge network.
+## Architecture
+
+```text
+Operational simulator
+        |
+        v
+PostgreSQL operational tables (9)
+        |
+        | keyset API: (updated_at, primary key)
+        v
+FastAPI source service
+        |
+        | per-table incremental extraction + transactional watermarks
+        v
+zepic_raw: append-only versions, batches and quality results
+        |
+        | row validation -> order-total reconciliation
+        v
+dbt Silver: zepic_staging (10 physical tables)
+        |
+        v
+dbt Gold: zepic_analytics (8 analytical tables)
+
+Airflow: 9 parallel extracts -> validation -> reconciliation -> dbt build
+```
+
+The source and all analytical layers share one local PostgreSQL instance, while
+Airflow metadata uses a separate database. Airflow orchestrates existing CLI
+entry points; business and quality logic remains testable outside the DAG.
+
+## What the project demonstrates
+
+- A deterministic operational simulation with atomic daily order, production,
+  inventory and fulfilment cycles.
+- Cursor-based incremental extraction for all nine source tables, with a fixed
+  upper bound and independent per-table watermarks.
+- Append-only Raw storage where records, batch metadata and watermark movement
+  commit in one transaction and are safe to retry.
+- Versioned row-quality rules and a cross-table order-total reconciliation gate;
+  invalid data is quarantined rather than deleted.
+- Physical Silver tables and analytics-ready Gold dimensions/facts built and
+  tested with dbt.
+- A manual Airflow DAG with parallel extraction, bounded concurrency, retry
+  policy, visible downstream blocking and task-level recovery.
+
+## Current accepted checkpoint
+
+The final ETL closeout checkpoint covers simulated operations through February
+3, 2026. The next simulation date is February 4, 2026.
+
+| Evidence | Accepted result |
+| --- | ---: |
+| Operational orders / order items | 3,468 / 10,334 |
+| Completed production orders / runs | 610 / 610 |
+| Shipped / pending orders | 3,342 / 126 |
+| Raw rows / extraction batches | 15,551 / 72 |
+| Latest orders reconciled | 3,468 matched, 0 issues |
+| Silver / Gold tables | 10 / 8 |
+| Python tests with PostgreSQL integration | 61 passed |
+| dbt models and data tests | 18 models, 93 tests, 111/111 passed |
+| Airflow closeout run | 1 DAG, 14 tasks, 14/14 successful |
+
+The database checkpoint is local runtime state, not a fixture required by the
+code. Fresh environments can build their own deterministic simulation from the
+committed configuration.
+
+## Quick start: run the accepted pipeline
+
+Requirements: Docker Desktop or Docker Engine with Compose, plus Python 3.10 or
+newer for host-side commands.
+
+Create local configuration and install the Python dependencies:
 
 ```sh
+cp .env.example .env
+# Replace POSTGRES_PASSWORD and any shared-environment Airflow credentials.
+python3 -m venv .venv
+.venv/bin/python -m pip install -r requirements.txt
+```
+
+Build the two application images, initialize PostgreSQL and the separate Airflow
+metadata database, then start the runtime:
+
+```sh
+docker compose build source-api airflow-scheduler
+docker compose up --no-build --abort-on-container-exit \
+  --exit-code-from airflow-init airflow-init
 docker compose up -d --no-build \
   source-api airflow-apiserver airflow-scheduler airflow-dag-processor
 ```
 
-Open <http://127.0.0.1:8080> to inspect the manual `zepic_raw_to_gold` DAG. Its
-nine extraction branches converge on strict Raw validation and order-total
-reconciliation gates before dbt rebuilds Silver and Gold. The accepted local run
-demonstrated extraction retries, blocked downstream tasks, reconciliation-gate
-failure, task-level recovery and a final 14/14 success state. The DAG remains
-paused after acceptance. See [PHASE5_HANDOFF.md](PHASE5_HANDOFF.md) for the final
-architecture, evidence, recovery exercise and operating boundaries.
+Open <http://127.0.0.1:8080>, sign in with `AIRFLOW_ADMIN_USER` and
+`AIRFLOW_ADMIN_PASSWORD` (local defaults: `airflow` / `airflow`), enable
+`zepic_raw_to_gold`, and trigger it manually. The DAG has no schedule or catchup
+and allows only one active run.
 
-## Phase 4 warehouse and dbt
-
-The dbt project in `warehouse/` combines append-only raw versions with Phase 3
-quality results, materializes typed Silver tables in `zepic_staging`, and builds
-analytics-ready Gold tables in `zepic_analytics`. It contains all nine source
-current-state models plus validated order-version history, customer/product/
-machine dimensions, order/order-line/production/maintenance facts, and current
-inventory.
+Stop the application services without deleting database state:
 
 ```sh
-.venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python scripts/validate_raw.py
-.venv/bin/python scripts/reconcile_order_totals.py
+docker compose stop \
+  source-api airflow-apiserver airflow-scheduler airflow-dag-processor
+```
+
+Do not use `docker compose down --volumes` unless the entire local operational,
+Raw and warehouse checkpoint is intentionally disposable.
+
+Detailed Airflow startup, parsing and recovery commands are in
+[orchestration/README.md](orchestration/README.md).
+
+## Run each layer directly
+
+The pipeline can be exercised without Airflow. Start PostgreSQL and the source
+API, then run the same commands used by the DAG:
+
+```sh
+docker compose up -d --wait postgres source-api
+.venv/bin/python scripts/extract_to_raw.py --table all
+.venv/bin/python scripts/validate_raw.py --fail-on-findings
+.venv/bin/python scripts/reconcile_order_totals.py --fail-on-findings
 .venv/bin/python scripts/run_warehouse.py build
 ```
 
-The wrapper loads the ignored root `.env`; `warehouse/profiles.yml` contains only
-environment-variable references. dbt tests enforce keys, relationships, domains,
-inventory nonnegativity, production terminal fields, and order total agreement.
-See `warehouse/DESIGN.md` for the layer boundary, model grains, latest-invalid
-record policy, lifecycle limitations, and dbt documentation UI.
+Each source table is extracted independently. A failed table rolls back its Raw
+rows, batch and watermark together; successfully completed tables do not need to
+be repeated. The validation and reconciliation commands are strict gates in the
+orchestrated path.
 
-## Phase 1.6 multi-day simulation
-
-Preview a date range, then apply it (30 days includes January 2 through January 31):
+To inspect dbt lineage and model documentation:
 
 ```sh
-.venv/bin/python scripts/run_simulation.py --start-date 2026-01-02 --days 30 --resume
-.venv/bin/python scripts/run_simulation.py --start-date 2026-01-02 --days 30 --resume --apply
+.venv/bin/python scripts/run_warehouse.py docs generate
+.venv/bin/python scripts/run_warehouse.py docs serve
 ```
 
-That original Phase 1.6 checkpoint had 3,137 orders, 9,306 items, 550 production
-orders/runs, 3,018 shipped orders and 119 pending orders. Phase 2 later advanced
-the local simulation by one day; its current counts are recorded below.
+## Build a fresh simulation
 
-- `--days` accepts 1–366, default 30. Config overrides: `--daily-config` and
-  `--production-config`. They default to the existing Phase 1.4/1.5 JSON files.
-- Preview reads a consistent database snapshot and shows dates/actions only;
-  it does not forecast future generated quantities or consume identity values.
-- Each new day has one outer transaction: confirmation/order generation, then
-  planning/production/shipping. Nested helpers use savepoints. Commit only when
-  the whole day succeeds. Failure rolls back that day, preserving prior commits.
-  Identity sequence gaps after a failed write remain normal PostgreSQL behavior.
-- Each committed day prints a JSON summary. After resolving a failure, repeat
-  the same range with `--resume`; completed dates are skipped without duplicates.
-  Without `--resume`, overlapping existing dates are rejected.
-- Resume can finish the latest standalone order day if its confirmed orders
-  still await production. Include that date in the requested range. It does not
-  replay old order generation or overwrite the original production schedule.
-- Resume infers progress from contiguous retained orders, no older pending
-  orders, no unfinished production and the all-success shipping rule. It is not
-  a general job ledger. Manually edited/deleted history, mixed configs or future
-  failure/backlog models need a stronger checkpoint design. Keep configs fixed
-  while continuing the same simulation. A no-demand first day is a valid no-op.
-- All operational tables are locked in a consistent order for each apply day;
-  locks are released after each day's commit. Competing runners recheck progress
-  under the locks. This is deliberately a small local simulator, not a live ERP.
-- Business times remain 08:00 confirmation, 09:00 planning, 16:00 shipping;
-  new orders between 09:00–17:00 remain pending until the next day. Future pending
-  timestamps are excluded from production inputs. January 3 retains its earlier
-  validated 18:00 schedule; January 4 onward uses the revised working-day schedule.
-
-Tests include a complete 30-day run, stock conservation, repeat resume, recovery
-after a late production/shipping failure, and simultaneous runners. Run them
-with the existing `ZEPIC_DB_TESTS=1` command below. This completes the successful
-operational simulation path; maintenance/failure generation remains deferred.
-The database stores current row states, not every transition. Phase 2 demonstrates
-incremental pulls between simulated days; it does not retain intermediate events.
-
-## Phase 2 source API and raw ingestion
-
-The API exposes all nine operational tables through an explicit table allowlist.
-It reads only from the operational schema. The API uses a
-maximum page size of 1,000 and keyset ordering by `(updated_at, primary key)`.
-Money is serialized as decimal strings and timestamps as UTC ISO-8601 values.
-
-For each table, the extractor first reads a fixed upper-bound tuple, then walks
-pages strictly after its stored lower cursor and through that upper bound. Pause
-the simulator while extracting: the tuple stabilizes pagination, while pausing
-writes gives all HTTP pages one consistent source state. This is current-state
-extraction, not change-data capture; transitions committed between pulls cannot
-be reconstructed. Raw rows retain the complete source payload and are append-only
-per extraction batch. The client commits each table's batch rows, batch metadata
-and watermark in one transaction. Tables advance independently; failed table
-batches roll back and are safe to retry. Empty tables are marked initialized
-without inventing a timestamp watermark.
-
-Run the API and extractor in separate terminals:
+PostgreSQL initialization creates the nine-table operational schema only when
+its volume is new. Preview and then load the deterministic master data:
 
 ```sh
-.venv/bin/uvicorn src.source_api:app --host 127.0.0.1 --port 8000
-.venv/bin/python scripts/extract_to_raw.py --table all
-```
-
-The extractor creates `zepic_raw` objects from `database/raw_schema.sql` on
-first use. Repeat the extraction after advancing one simulation day to see
-inserts and updates. Keep the API bound to localhost for this local MVP; network
-authentication and concurrent source writes are outside this slice.
-
-The Jan 31 baseline held 3,137 orders, 9,306 items and 20 inventory rows.
-The Feb 1 pull captured 97 new orders, 119 updated orders, 309 new items and
-20 updated inventory rows. Full baselines for the remaining tables followed;
-maintenance was empty. The Feb 2 pull captured 108 new orders, 97 order updates,
-335 new items, 20 new production orders, 20 new runs and 20 inventory updates.
-The operational database now has 3,342 orders, 9,950 items, 590 completed
-production orders/runs, 3,234 shipped orders, 108 pending orders and 700
-inventory units. Raw contains 14,873 rows across nine source tables. Next
-simulation date: February 3, 2026.
-
-## Phase 3 raw quality checks
-
-`scripts/validate_raw.py` applies versioned row-level rules to landed batches:
-source key/timestamp consistency, required fields, enum domains, numeric bounds,
-status/time combinations and references to landed parent rows. Invalid rows stay
-in immutable raw storage; their findings appear through
-`zepic_raw.quarantined_records`, while `zepic_raw.validated_records` excludes
-those rows for the latest completed ruleset. Validation never changes extraction
-watermarks. A row with any finding is quarantined, while the remaining rows in
-its batch stay eligible.
-
-Validate every batch not yet processed under rule version `v1`, or target one
-batch explicitly:
-
-```sh
-.venv/bin/python scripts/validate_raw.py
-.venv/bin/python scripts/validate_raw.py --batch-id 1
-```
-
-Quality run keys are `(batch_id, rule_version)`. Re-running an existing batch
-returns its saved result without adding duplicate findings. Each batch's quality
-run and findings commit atomically. The current raw checkpoint validated all 27
-batches and 14,873 rows: all passed, with zero quarantine findings. A temporary
-database test injected an invalid customer tier and verified that the raw row
-and watermark remained unchanged while one finding was quarantined.
-
-The row-level ruleset mirrors local row constraints and checks raw metadata and
-landed foreign keys. After all raw batches have been validated, reconcile current
-order headers against the latest current-state item rows:
-
-```sh
-.venv/bin/python scripts/validate_raw.py
-.venv/bin/python scripts/reconcile_order_totals.py
-```
-
-The reconciliation uses exact decimal arithmetic for `quantity * unit_price`,
-reports orders with missing details separately, and skips an order if its header
-or any current detail row was quarantined by row-level validation. Runs and
-findings are stored separately in `zepic_raw.order_reconciliation_runs` and
-`zepic_raw.order_reconciliation_findings`; the latest result is available through
-`zepic_raw.latest_order_reconciliation` and
-`zepic_raw.order_reconciliation_issues`. It does not modify raw rows or
-watermarks. The same order/item snapshot is idempotent; changed source rows
-produce a new reconciliation run.
-
-The current raw checkpoint reconciled all 3,342 latest orders: 3,342 matched,
-zero mismatched, zero without details, and zero skipped. The combined unit and
-temporary-PostgreSQL suite has 53 passing tests.
-
-Run all 53 tests, including temporary-PostgreSQL integration tests, with:
-
-```sh
-ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
-```
-
-## Phase 1.5 production and fulfillment
-
-After generating a day's orders, preview then apply its production cycle:
-
-```sh
-.venv/bin/python scripts/run_production_planning.py --date 2026-01-03
-.venv/bin/python scripts/run_production_planning.py --date 2026-01-03 --apply
-```
-
-The example is for a fresh simulation at that date. The Phase 1.5 checkpoint
-completed January 3 with 14 production orders/runs, 3,200 units produced,
-148 orders shipped and 82 pending. The database has since advanced through
-January 31 (see Phase 1.6 above). Do not replay the January 3 apply command.
-The January 3 records retain the earlier 18:00/18:32 schedule; new cycles use
-09:00 planning and 16:00 shipping. Historical rows were not rewritten.
-
-Rules (`config/production.json`, overridable with `--config`):
-
-- At 09:00 UTC, aggregate only confirmed demand by product, subtract current
-  inventory and create one production order per positive shortage. Planned
-  quantity is `ceil(shortage * (1 + buffer_rate) / batch_multiple) * batch_multiple`.
-  Default buffer is 5%; snapshot it and the product batch size on the production order.
-- Available machines with no active maintenance are deterministically shuffled
-  using seed + date, then assigned in round-robin waves. Each run lasts 10 simulated
-  minutes by default, independent of quantity: this is an MVP timing assumption,
-  not a throughput/capacity model. First runs start at 09:01. A machine may execute
-  several successive runs, but its recorded intervals never overlap.
-- One run per production order; all runs succeed with actual quantity equal to
-  planned quantity. Orders go planned → released → completed, runs go running →
-  completed, and output enters inventory. Machine availability is not changed.
-- At 16:00 UTC (also when no production is needed), try confirmed sales orders oldest
-  first, breaking ties by order_id. Ship only if every item is available. Otherwise
-  consume nothing for that order and continue trying the others. Deduction and
-  the shipped header update share the same transaction; items/prices stay unchanged.
-- Reject missing inventory, inactive products requiring production, shortages
-  without machines, unfinished prior production, dates other than the latest
-  generated order date, future participating-source timestamps or runs ending at/after 16:00.
-  Pending orders and their items are excluded from the source-time guard as well
-  as demand/fulfillment; afternoon pending rows cannot block morning planning.
-  Existing stock can be shipped without any available machines.
-- Preview is read-only; apply locks the relevant tables and commits the whole
-  cycle atomically. Intermediate planned/released/running states are executed
-  inside the transaction, so outside readers see the committed final states only.
-  These are state tables, not an event history or CDC stream.
-- Existing production orders or shipment timestamps reject repeat execution.
-  An empty-demand no-op writes no marker and may be safely repeated. Guards
-  assume retained simulation records, not manually deleted or edited history.
-- Random failures, yield loss, maintenance generation, cancellation and partial
-  shipments remain out of scope. Tests exercise insufficient stock and forced
-  database failures; they do not add random failed-run generation.
-
-The existing test commands below include production coverage. Database tests
-also verify rollback, no double production under concurrency, preview without
-sequence changes, nonoverlapping machine runs and per-product inventory balance.
-
-## Phase 1.4 daily orders
-
-After Phase 1.3 initialization, preview then apply each UTC day in order:
-
-```sh
-.venv/bin/python scripts/generate_daily_operations.py --date 2026-01-02
-.venv/bin/python scripts/generate_daily_operations.py --date 2026-01-02 --apply
-.venv/bin/python scripts/generate_daily_operations.py --date 2026-01-03 --apply
-```
-
-These are fresh-database examples. The Phase 1.4 checkpoint applied January 2
-and 3; the local database has since advanced through January 31. Existing dates
-are rejected rather than appended again. Run the production cycle after each
-day's orders, or use the Phase 1.6 runner above.
-
-Configuration: `config/daily_operations.json` (`--config` accepts another path).
-
-- 50–150 orders/day; each uniformly selects a customer and 1–5 distinct active
-  products, with 1–20 units per item. Sales quantities need not be production
-  batch multiples. The catalog price becomes the order-item price snapshot;
-  `total_amount` is the Decimal sum of its item amounts.
-- Older pending orders are confirmed at 08:00 UTC on the next simulation day.
-  New pending orders are timestamped between 09:00 inclusive and 17:00 exclusive.
-  Confirmation changes only the order header's status and updated_at, not items.
-- First date defaults to January 2, 2026, after the master-data origin. Change
-  `first_date` before the first run if using another origin. Subsequent runs
-  must be the calendar day immediately after the most recent order date.
-- Seed + date determines each day's random stream. Reproduction also requires
-  identical config, source rows, code and Python version. Preview reads current
-  database data in a read-only snapshot; it changes neither rows nor sequences.
-  A later apply can differ if source data changes after preview.
-- One transaction confirms previous orders and inserts the new day. Source
-  table locks freeze prices/customer IDs; order table locks serialize the date
-  check with inserts. Failure rolls back all row changes, including confirmations.
-  Failed inserts can still consume identity sequence values.
-- Duplicate, skipped and backward dates are rejected. This is a bootstrap
-  simulator guard, not pipeline UPSERT/idempotency. It relies on keeping generated
-  orders and having at least one order per day; manual deletion of a whole day's
-  orders removes that evidence. No new run-history table was added.
-- No cancellation, shipment, inventory deduction, production or maintenance
-  is performed in this phase. Confirmed demand waits for Phase 1.5.
-
-Tests (database suite creates and removes a uniquely named temporary database;
-the configured PostgreSQL user needs permission to create databases):
-
-```sh
-.venv/bin/python -m unittest discover -s tests -v
-ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
-```
-
-## Phase 1.3 initial data
-
-Use Python 3.10+ and run from the repository root:
-
-```sh
-python3 -m venv .venv
-.venv/bin/python -m pip install -r requirements.txt
+docker compose up -d --wait postgres
 .venv/bin/python scripts/generate_initial_data.py
-docker compose up -d --wait
 .venv/bin/python scripts/generate_initial_data.py --apply
 ```
 
-The first invocation previews data without connecting to PostgreSQL. `--apply`
-loads `.env` (existing environment variables take precedence), checks all nine
-tables are empty and inserts all four initial datasets in one transaction.
-Repeated initialization is rejected without changing existing data. There is
-no automatic reset or overwrite. Database-assigned IDs need not start at 1.
-
-Edit `config/initial_data.json`, or pass `--config /path/to/config.json`:
-
-- Default: 100 synthetic customers (70 standard, 20 silver, 10 gold), 20 active
-  products, 5 available machines and one inventory row per product.
-- Product names, prices and batch sizes are illustrative industrial-part data,
-  not market prices. Prices are decimal strings, never floating-point values.
-- Seed 42 shuffles customer tiers. Seed + 1 independently chooses inventory
-  from 0, 1, 3 or 5 product batches, with equal probability per choice.
-- Start time defaults to `2026-01-01T00:00:00+00:00`; all initial created_at and
-  updated_at values use this instant. The date is a configurable simulation origin.
-- Reproduction assumes unchanged configuration, product order, generator code
-  and Python version. Business values are repeatable; database IDs are not fixed.
-- Orders, production and maintenance records remain empty for later phases.
-
-Run generator tests with `.venv/bin/python -m unittest discover -s tests -v`.
-The Phase 1.2 `database/verify.sql` is for a separate disposable empty database;
-do not run it on this initialized dataset.
-
-## Start
-
-Requires Docker Desktop (or Docker Engine) running with Compose support.
-Run commands from this repository root. A local `.env` has been created for
-this checkout; for a fresh clone, copy `.env.example` to `.env` and replace
-the example password first. `.env` is ignored by Git.
+Preview a date range before applying complete daily cycles:
 
 ```sh
-docker compose config --quiet
-docker compose up -d --wait
-docker compose ps
-docker compose exec postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -c "\dt"'
+.venv/bin/python scripts/run_simulation.py \
+  --start-date 2026-01-02 --days 30 --resume
+.venv/bin/python scripts/run_simulation.py \
+  --start-date 2026-01-02 --days 30 --resume --apply
 ```
 
-PostgreSQL 16 listens on localhost only. `POSTGRES_PORT` changes the host port;
-the container port stays 5432. `POSTGRES_HOST` is for future host-side Python
-clients; another Compose service would use hostname `postgres`.
+Every applied day wraps order confirmation and generation, production, inventory
+movement and whole-order shipping in one outer transaction. A failed day rolls
+back as a unit; committed earlier days remain intact. `--resume` skips inferred
+complete dates and can finish the latest order-only date after a resolved failure.
+It is deliberately not a general job ledger: keep configuration and retained
+history unchanged while extending one simulation.
 
-On a Mac where Docker Desktop is installed but the Compose plugin is not on
-the CLI search path, replace `docker compose` with:
+## Data contracts and important semantics
+
+### Operational model
+
+The source contains customers, products, machines, inventory, orders, order
+items, production orders, production runs and maintenance records. Orders move
+through `pending -> confirmed -> shipped`; fulfilment is whole-order only.
+Production closes shortages with a configurable buffer and batch rounding. The
+simulator commits final daily states, not a complete business-event history.
+
+### Incremental extraction
+
+The API pages by `(updated_at, primary key)` and serializes money as decimal
+strings and timestamps as UTC ISO-8601 values. For each table, extraction fixes
+an upper cursor before paging from the saved lower cursor. This prevents page
+drift but does not make multiple HTTP requests one source snapshot, so simulator
+writes should be paused during extraction.
+
+This is current-state incremental extraction, not CDC. A transition that starts
+and finishes between two pulls cannot be reconstructed.
+
+### Quality and quarantine
+
+Raw rows are immutable. Versioned rules check metadata consistency, required
+fields, domains, numeric and lifecycle constraints, and landed relationships.
+Any finding quarantines that record version without changing the extraction
+watermark. A strict run continues to fail while a source key's latest validated
+version remains quarantined, so an empty retry cannot bypass an old issue.
+
+Order reconciliation compares the latest eligible header with its current line
+items using exact decimal arithmetic. Mismatches, missing items and quarantine-
+related skips block the warehouse build.
+
+### Silver and Gold
+
+dbt first ranks the latest quality-checked Raw version for each key and then
+applies validity. If that exact latest version is quarantined, the key is omitted;
+the model never silently falls back to an older valid value. Silver is rebuilt as
+ten physical tables, while Raw remains the replayable version history.
+
+Gold contains three current dimensions, four facts and current inventory:
+
+| Model | Grain |
+| --- | --- |
+| `dim_customers`, `dim_products`, `dim_machines` | one row per current entity |
+| `fct_orders` | one row per order |
+| `fct_order_lines` | one row per order item |
+| `fct_production_runs` | one row per production run |
+| `fct_maintenance` | one row per maintenance record |
+| `current_inventory` | one row per product |
+
+`stg_order_versions` preserves observed valid order versions for lifecycle
+milestones. Because extraction is not CDC, a null `confirmed_at` means “not
+observed”, not “never confirmed”. The current checkpoint captured pending and
+shipped versions but no confirmed versions, so it must not be presented as a
+complete order funnel.
+
+## Airflow execution and recovery
+
+`zepic_raw_to_gold` runs nine independent extraction tasks before its quality
+gates and warehouse build:
+
+```text
+start -> extract.* -> validate_raw -> reconcile_order_totals
+      -> build_warehouse -> complete
+```
+
+Extraction retries twice at 30-second intervals; downstream quality and build
+tasks do not retry automatically so failures stay visible for operator review.
+Global parallelism is four and `max_active_runs=1` prevents concurrent pipeline
+runs from advancing the same watermarks.
+
+Acceptance covered both source-service failure and a controlled reconciliation
+failure. After the cause was removed, clearing only the affected tasks completed
+the same DAG run with all 14 tasks successful and without duplicating the data
+checkpoint. See [PHASE5_HANDOFF.md](PHASE5_HANDOFF.md) for the recorded run and
+recovery evidence.
+
+Closeout screenshots and the final evidence narrative are collected in
+[ETL_PHASE_SUMMARY.md](ETL_PHASE_SUMMARY.md).
+
+## Tests and verification
+
+Run the fast host-side suite:
 
 ```sh
-/Applications/Docker.app/Contents/Resources/cli-plugins/docker-compose
+.venv/bin/python -m unittest discover -s tests -v
 ```
 
-## Files
-
-- `docker-compose.yml`: PostgreSQL service, healthcheck and persistent volume.
-- `database/schema.sql`: agreed 9-table schema, indexes and triggers.
-- `database/verify.sql`: SQL smoke checks for a disposable initialized database.
-- `config/`: initial master-data and daily-order parameters.
-- `scripts/`: initial-data and daily-operation generators.
-- `tests/`: generation tests and optional isolated database tests.
-- `src/`: reserved for shared utilities when needed.
-- `PROJECT_HANDOFF.md`: locked business decisions and phase boundary.
-
-## Verify
-
-Run on a disposable initialized database. Test rows roll back, but PostgreSQL
-identity sequence increments do not roll back. Do not use on populated data:
-some negative test statements deliberately target whole tables.
+Run the complete suite, including temporary PostgreSQL databases:
 
 ```sh
-docker compose exec -T postgres sh -c 'psql -X -v ON_ERROR_STOP=1 -U "$POSTGRES_USER" -d "$POSTGRES_DB"' < database/verify.sql
+ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
 ```
 
-Expected: 9 tables, 32 indexes (including PK/UNIQUE indexes), 10 triggers,
-and a final `PASS` message. A healthcheck alone does not verify the schema.
+Database tests create isolated, uniquely named databases and remove them after
+use; the configured PostgreSQL user must be able to create databases. The
+final full run contains 61 tests.
 
-## Persistence and schema changes
+Run the warehouse contract directly with:
 
-`docker compose down` removes the container but retains database data.
-The initialization SQL runs only when the data volume is empty. Editing
-`schema.sql` or changing initialization credentials in `.env` does not modify
-an existing database. SQL initialization is transactional and fails on errors.
+```sh
+.venv/bin/python scripts/run_warehouse.py parse
+.venv/bin/python scripts/run_warehouse.py build
+```
 
-Only when intentionally discarding **all local database data**, reset with
-`docker compose down -v`, followed by `docker compose up -d --wait`.
-An initialization failure may also require this reset for a disposable volume.
-Use migrations once data must be preserved.
+The build covers 18 table models and 93 dbt data tests. Tests enforce keys,
+relationships, domains, latest-invalid suppression, nonnegative inventory,
+production terminal fields, lifecycle chronology and exact order totals.
+
+`database/verify.sql` is a destructive-edge smoke test for a separate disposable
+schema checkpoint. Do not run it against populated project data.
+
+## Repository map
+
+| Path | Responsibility |
+| --- | --- |
+| `config/` | deterministic master-data, daily-order and production settings |
+| `database/` | operational, Raw and quality PostgreSQL DDL plus disposable verification |
+| `src/source_api.py` | allowlisted, paginated operational source API |
+| `scripts/` | simulation, extraction, validation, reconciliation and dbt CLIs |
+| `warehouse/` | dbt project, Silver/Gold models, macros and singular tests |
+| `orchestration/` | Airflow DAG, task contract, container images and runbook |
+| `tests/` | unit and isolated PostgreSQL integration tests |
+| `PHASE*_HANDOFF.md` | phase acceptance evidence and historical checkpoints |
+
+The most durable design references are
+[warehouse/DESIGN.md](warehouse/DESIGN.md) and
+[orchestration/DESIGN.md](orchestration/DESIGN.md). Earlier handoffs preserve why
+the project evolved; this README describes the final integrated path.
+
+## Scope boundaries
+
+This is a portfolio runtime, not a production deployment. It intentionally has
+no TLS, secret manager, source authentication, CDC, scheduler HA, remote logs,
+alerting integration or Celery/Kubernetes executor. Maintenance/failure data
+generation, partial fulfilment and random production yield loss are also outside
+scope. These boundaries keep the project focused on a coherent, testable ETL
+contract rather than unimplemented platform breadth.

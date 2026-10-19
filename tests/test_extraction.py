@@ -4,7 +4,7 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 import unittest
 
-from scripts.extract_to_raw import fetch_batch, parse_timestamp, request_json
+from scripts.extract_to_raw import ensure_raw_schema, fetch_batch, parse_timestamp, request_json
 
 
 class ExtractionUnitTests(unittest.TestCase):
@@ -70,6 +70,22 @@ class ExtractionUnitTests(unittest.TestCase):
     def test_fetch_refuses_unknown_table(self):
         with self.assertRaisesRegex(ValueError, "Unsupported source table"):
             fetch_batch("not_a_source_table", "http://source.test", None)
+
+    def test_schema_lock_is_released_when_initialization_fails(self):
+        statements = []
+
+        class Connection:
+            def execute(self, statement, params=None):
+                statements.append((statement, params))
+                if statement == "broken schema":
+                    raise RuntimeError("schema failure")
+
+        with self.assertRaisesRegex(RuntimeError, "schema failure"):
+            ensure_raw_schema(Connection(), "broken schema")
+
+        self.assertIn("pg_advisory_lock", statements[0][0])
+        self.assertEqual(statements[1], ("broken schema", None))
+        self.assertIn("pg_advisory_unlock", statements[2][0])
 
 
 if __name__ == "__main__":

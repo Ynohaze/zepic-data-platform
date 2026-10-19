@@ -24,10 +24,11 @@ def extraction_command(table):
         raise ValueError(f"Unsupported source table: {table}")
     return (
         "python scripts/extract_to_raw.py "
-        f"--base-url {SOURCE_API_URL} --table {table}"
+        f"--base-url {SOURCE_API_URL} --table {table} --skip-schema-init"
     )
 
 
+START_COMMAND = "python scripts/extract_to_raw.py --init-only"
 VALIDATE_COMMAND = "python scripts/validate_raw.py --fail-on-findings"
 RECONCILE_COMMAND = (
     "python scripts/reconcile_order_totals.py --fail-on-findings && "

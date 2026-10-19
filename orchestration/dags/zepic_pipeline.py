@@ -12,6 +12,7 @@ from orchestration.pipeline_contract import (
     PROJECT_DIR,
     RECONCILE_COMMAND,
     SOURCE_TABLES,
+    START_COMMAND,
     VALIDATE_COMMAND,
     WAREHOUSE_COMMAND,
     extraction_command,
@@ -28,7 +29,12 @@ with DAG(
     default_args={"retries": 0},
     tags=["zepic", "phase5"],
 ) as dag:
-    start = EmptyOperator(task_id="start")
+    start = BashOperator(
+        task_id="start",
+        bash_command=START_COMMAND,
+        cwd=PROJECT_DIR,
+        append_env=True,
+    )
 
     with TaskGroup(group_id="extract", tooltip="Independently extract all nine source tables"):
         extraction_tasks = [

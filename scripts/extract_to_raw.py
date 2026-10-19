@@ -25,6 +25,20 @@ TABLES = {
     "production_runs": "production_run_id",
     "maintenance_records": "maintenance_record_id",
 }
+RAW_SCHEMA_LOCK_KEY = "zepic_raw:schema"
+
+
+def ensure_raw_schema(connection, schema_sql):
+    """Serialize idempotent Raw DDL across parallel extraction processes."""
+    connection.execute(
+        "SELECT pg_advisory_lock(hashtext(%s))", (RAW_SCHEMA_LOCK_KEY,)
+    )
+    try:
+        connection.execute(schema_sql)
+    finally:
+        connection.execute(
+            "SELECT pg_advisory_unlock(hashtext(%s))", (RAW_SCHEMA_LOCK_KEY,)
+        )
 
 
 def parse_timestamp(value):
@@ -158,6 +172,11 @@ def main():
     parser.add_argument("--base-url", default="http://127.0.0.1:8000")
     parser.add_argument("--table", choices=[*TABLES, "all"], default="all")
     parser.add_argument("--page-size", type=int, default=500)
+    schema_mode = parser.add_mutually_exclusive_group()
+    schema_mode.add_argument("--init-only", action="store_true",
+                             help="initialize or upgrade Raw schema, then exit")
+    schema_mode.add_argument("--skip-schema-init", action="store_true",
+                             help=argparse.SUPPRESS)
     args = parser.parse_args()
     if not 1 <= args.page_size <= 1000:
         parser.error("--page-size must be between 1 and 1000")
@@ -175,7 +194,11 @@ def main():
                              port=os.getenv("POSTGRES_PORT", "5432"), connect_timeout=5,
                              autocommit=True) as conn:
             conn.execute("SET search_path TO public")
-            conn.execute((ROOT / "database/raw_schema.sql").read_text())
+            if not args.skip_schema_init:
+                ensure_raw_schema(conn, (ROOT / "database/raw_schema.sql").read_text())
+            if args.init_only:
+                print(json.dumps({"raw_schema_initialized": True}))
+                return
             results = [extract_table(conn, table, args.base_url, args.page_size) for table in tables]
     except Exception as exc:
         parser.exit(1, f"Extraction failed ({type(exc).__name__}); the current table batch was rolled back.\n")

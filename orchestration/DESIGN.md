@@ -9,7 +9,7 @@ does not duplicate extraction, validation, reconciliation, or dbt logic.
 The first checkpoint established the testable DAG contract below.
 
 ```text
-start
+start (initialize/upgrade Raw schema once)
   |
   +-- extract.customers -----------+
   +-- extract.products ------------+
@@ -79,6 +79,12 @@ The source API is its own application container. All services join the explicit
 Global Airflow parallelism is capped at four for a laptop-sized local runtime.
 The nine extraction tasks remain independent parallel branches in the DAG, but
 Airflow executes at most four task instances at once.
+
+The `start` task applies the idempotent Raw schema before those branches are
+released. Per-table Airflow commands then skip schema initialization. This keeps
+parallel extraction transactions from deadlocking against repeated concurrent
+`ALTER TABLE` statements while preserving direct CLI behavior: a host-side
+`extract_to_raw.py --table all` still initializes its own schema by default.
 
 The project checkout is mounted read-only in Airflow containers. dbt therefore
 writes its runtime logs and compiled artifacts to `/tmp/zepic-dbt`; warehouse

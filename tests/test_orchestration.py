@@ -5,6 +5,7 @@ from orchestration.pipeline_contract import (
     CONTROLLED_RECONCILIATION_FAILURE_SENTINEL,
     RECONCILE_COMMAND,
     SOURCE_TABLES,
+    START_COMMAND,
     VALIDATE_COMMAND,
     WAREHOUSE_COMMAND,
     extraction_command,
@@ -22,6 +23,10 @@ class OrchestrationContractTests(unittest.TestCase):
         for table, command in zip(SOURCE_TABLES, commands):
             self.assertIn(f"--table {table}", command)
             self.assertIn("http://source-api:8000", command)
+            self.assertIn("--skip-schema-init", command)
+
+    def test_start_initializes_raw_schema_before_parallel_extraction(self):
+        self.assertEqual(START_COMMAND, "python scripts/extract_to_raw.py --init-only")
 
     def test_quality_steps_are_strict_before_warehouse_build(self):
         self.assertIn("--fail-on-findings", VALIDATE_COMMAND)

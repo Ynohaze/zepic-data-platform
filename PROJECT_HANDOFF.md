@@ -1,9 +1,14 @@
 # Zepic — Phase 1.6 handoff
 
-**Current project checkpoint: [PHASE4_HANDOFF.md](PHASE4_HANDOFF.md).** It covers
-the revised physical Silver-to-Gold dbt implementation and current analytics
-counts. The durable design decisions are in [warehouse/DESIGN.md](warehouse/DESIGN.md).
-The Phase 1 history below remains useful for operational business semantics.
+**Current project checkpoint: [ETL_PHASE_SUMMARY.md](ETL_PHASE_SUMMARY.md).** It
+records the final data refresh, regression, Airflow run and portfolio evidence.
+[PHASE5_HANDOFF.md](PHASE5_HANDOFF.md) preserves the original orchestration
+acceptance and recovery exercise. The integrated project path is summarized in
+[README.md](README.md);
+durable warehouse and orchestration decisions live in
+[warehouse/DESIGN.md](warehouse/DESIGN.md) and
+[orchestration/DESIGN.md](orchestration/DESIGN.md). The Phase 1 history below
+remains useful for operational business semantics.
 
 **Starting Phase 2 in a new session? Read [PHASE2_HANDOFF.md](PHASE2_HANDOFF.md)
 first.** It consolidates the current checkpoint, collaboration rules, source

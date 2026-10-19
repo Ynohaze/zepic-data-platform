@@ -5,7 +5,7 @@ from pathlib import Path
 import unittest
 import uuid
 
-from scripts.extract_to_raw import extract_table, parse_timestamp
+from scripts.etl.extract_to_raw import extract_table, parse_timestamp
 
 
 ROOT = Path(__file__).resolve().parents[1]

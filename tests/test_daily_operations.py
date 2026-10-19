@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.generate_daily_operations import build_orders, day_start, validate_config
+from scripts.etl.generate_daily_operations import build_orders, day_start, validate_config
 
 ROOT = Path(__file__).resolve().parents[1]
 

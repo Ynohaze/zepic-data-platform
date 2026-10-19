@@ -23,17 +23,17 @@ def extraction_command(table):
     if table not in SOURCE_TABLES:
         raise ValueError(f"Unsupported source table: {table}")
     return (
-        "python scripts/extract_to_raw.py "
+        "python scripts/etl/extract_to_raw.py "
         f"--base-url {SOURCE_API_URL} --table {table} --skip-schema-init"
     )
 
 
-START_COMMAND = "python scripts/extract_to_raw.py --init-only"
-VALIDATE_COMMAND = "python scripts/validate_raw.py --fail-on-findings"
+START_COMMAND = "python scripts/etl/extract_to_raw.py --init-only"
+VALIDATE_COMMAND = "python scripts/etl/validate_raw.py --fail-on-findings"
 RECONCILE_COMMAND = (
-    "python scripts/reconcile_order_totals.py --fail-on-findings && "
+    "python scripts/etl/reconcile_order_totals.py --fail-on-findings && "
     f"if [ -f {CONTROLLED_RECONCILIATION_FAILURE_SENTINEL} ]; then "
     "echo 'Controlled reconciliation failure: simulated order-total mismatch.' >&2; "
     "exit 1; fi"
 )
-WAREHOUSE_COMMAND = "python scripts/run_warehouse.py build"
+WAREHOUSE_COMMAND = "python scripts/etl/run_warehouse.py build"

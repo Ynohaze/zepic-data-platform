@@ -9,8 +9,8 @@ from threading import Barrier
 import unittest
 import uuid
 
-from scripts.generate_daily_operations import day_start, run_day
-from scripts.generate_initial_data import TABLES, build_data, populate
+from scripts.etl.generate_daily_operations import day_start, run_day
+from scripts.etl.generate_initial_data import TABLES, build_data, populate
 
 ROOT = Path(__file__).resolve().parents[1]
 

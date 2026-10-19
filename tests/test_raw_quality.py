@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 import unittest
 
-from scripts.validate_raw import parse_timestamp, validate_record
+from scripts.etl.validate_raw import parse_timestamp, validate_record
 
 
 class RawQualityUnitTests(unittest.TestCase):

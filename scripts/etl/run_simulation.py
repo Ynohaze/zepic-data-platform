@@ -14,7 +14,7 @@ else:
     from generate_daily_operations import day_start, run_day, validate_config as validate_daily
     from run_production_planning import run_cycle, validate_config as validate_production
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def dates(start, days):

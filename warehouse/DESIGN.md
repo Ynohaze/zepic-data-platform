@@ -91,8 +91,8 @@ is no always-on orchestration dashboard in Phase 4. dbt can generate a local
 interactive lineage and documentation site:
 
 ```sh
-.venv/bin/python scripts/run_warehouse.py docs generate
-.venv/bin/python scripts/run_warehouse.py docs serve
+.venv/bin/python scripts/etl/run_warehouse.py docs generate
+.venv/bin/python scripts/etl/run_warehouse.py docs serve
 ```
 
 The generated static entry point is `warehouse/target/index.html`. Phase 5 will

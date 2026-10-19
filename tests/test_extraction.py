@@ -4,7 +4,7 @@ from urllib.error import HTTPError
 from urllib.parse import parse_qs, urlparse
 import unittest
 
-from scripts.extract_to_raw import ensure_raw_schema, fetch_batch, parse_timestamp, request_json
+from scripts.etl.extract_to_raw import ensure_raw_schema, fetch_batch, parse_timestamp, request_json
 
 
 class ExtractionUnitTests(unittest.TestCase):

@@ -56,6 +56,8 @@ entry points; business and quality logic remains testable outside the DAG.
   tested with dbt.
 - A manual Airflow DAG with parallel extraction, bounded concurrency, retry
   policy, visible downstream blocking and task-level recovery.
+- A governed Level 1 analytics dashboard with deterministic Gold metrics,
+  single-turn natural-language questions, visible SQL and evidence metadata.
 
 ## Current accepted checkpoint
 
@@ -121,6 +123,27 @@ Raw and warehouse checkpoint is intentionally disposable.
 Detailed Airflow startup, parsing and recovery commands are in
 [orchestration/README.md](orchestration/README.md).
 
+## Run the Level 1 analytics dashboard
+
+After building the warehouse, configure `ANALYTICS_DB_USER`,
+`ANALYTICS_DB_PASSWORD` and `GROQ_API_KEY` in `.env`, then provision the
+read-only analytics role and start the local application:
+
+```sh
+docker compose up -d --wait postgres
+.venv/bin/python scripts/ai/setup_analytics_role.py
+.venv/bin/uvicorn src.analytics_api:app --host 127.0.0.1 --port 8001
+```
+
+Open <http://127.0.0.1:8001/dashboard/>. The headline metrics use fixed,
+guarded SQL and do not depend on Groq. The question workspace performs one
+model proposal, one validated read-only query and one evidence-grounded answer.
+The disabled `Analysis task` mode is a design seam for a future bounded agent;
+Level 1 does not plan or run autonomous task loops.
+
+Detailed provider, safety and recovery notes are in
+[analytics/README.md](analytics/README.md).
+
 ## Run each layer directly
 
 The pipeline can be exercised without Airflow. Start PostgreSQL and the source
@@ -128,10 +151,10 @@ API, then run the same commands used by the DAG:
 
 ```sh
 docker compose up -d --wait postgres source-api
-.venv/bin/python scripts/extract_to_raw.py --table all
-.venv/bin/python scripts/validate_raw.py --fail-on-findings
-.venv/bin/python scripts/reconcile_order_totals.py --fail-on-findings
-.venv/bin/python scripts/run_warehouse.py build
+.venv/bin/python scripts/etl/extract_to_raw.py --table all
+.venv/bin/python scripts/etl/validate_raw.py --fail-on-findings
+.venv/bin/python scripts/etl/reconcile_order_totals.py --fail-on-findings
+.venv/bin/python scripts/etl/run_warehouse.py build
 ```
 
 Each source table is extracted independently. A failed table rolls back its Raw
@@ -142,8 +165,8 @@ orchestrated path.
 To inspect dbt lineage and model documentation:
 
 ```sh
-.venv/bin/python scripts/run_warehouse.py docs generate
-.venv/bin/python scripts/run_warehouse.py docs serve
+.venv/bin/python scripts/etl/run_warehouse.py docs generate
+.venv/bin/python scripts/etl/run_warehouse.py docs serve
 ```
 
 ## Build a fresh simulation
@@ -153,16 +176,16 @@ its volume is new. Preview and then load the deterministic master data:
 
 ```sh
 docker compose up -d --wait postgres
-.venv/bin/python scripts/generate_initial_data.py
-.venv/bin/python scripts/generate_initial_data.py --apply
+.venv/bin/python scripts/etl/generate_initial_data.py
+.venv/bin/python scripts/etl/generate_initial_data.py --apply
 ```
 
 Preview a date range before applying complete daily cycles:
 
 ```sh
-.venv/bin/python scripts/run_simulation.py \
+.venv/bin/python scripts/etl/run_simulation.py \
   --start-date 2026-01-02 --days 30 --resume
-.venv/bin/python scripts/run_simulation.py \
+.venv/bin/python scripts/etl/run_simulation.py \
   --start-date 2026-01-02 --days 30 --resume --apply
 ```
 
@@ -275,8 +298,8 @@ final full run contains 61 tests.
 Run the warehouse contract directly with:
 
 ```sh
-.venv/bin/python scripts/run_warehouse.py parse
-.venv/bin/python scripts/run_warehouse.py build
+.venv/bin/python scripts/etl/run_warehouse.py parse
+.venv/bin/python scripts/etl/run_warehouse.py build
 ```
 
 The build covers 18 table models and 93 dbt data tests. Tests enforce keys,
@@ -293,7 +316,8 @@ schema checkpoint. Do not run it against populated project data.
 | `config/` | deterministic master-data, daily-order and production settings |
 | `database/` | operational, Raw and quality PostgreSQL DDL plus disposable verification |
 | `src/source_api.py` | allowlisted, paginated operational source API |
-| `scripts/` | simulation, extraction, validation, reconciliation and dbt CLIs |
+| `scripts/etl/` | simulation, extraction, validation, reconciliation and dbt CLIs |
+| `scripts/ai/` | governed AI analytics setup and operational CLIs |
 | `warehouse/` | dbt project, Silver/Gold models, macros and singular tests |
 | `orchestration/` | Airflow DAG, task contract, container images and runbook |
 | `tests/` | unit and isolated PostgreSQL integration tests |

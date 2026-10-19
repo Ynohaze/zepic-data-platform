@@ -101,8 +101,8 @@ The generated interactive files remain under the ignored `warehouse/target/`
 directory and can be recreated with:
 
 ```sh
-.venv/bin/python scripts/run_warehouse.py docs generate
-.venv/bin/python scripts/run_warehouse.py docs serve
+.venv/bin/python scripts/etl/run_warehouse.py docs generate
+.venv/bin/python scripts/etl/run_warehouse.py docs serve
 ```
 
 ## Portfolio narrative

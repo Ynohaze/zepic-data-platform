@@ -9,10 +9,10 @@ import os
 from pathlib import Path
 import sys
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT))
 
-from scripts.validate_raw import RULE_VERSION as VALIDATION_RULE_VERSION
+from scripts.etl.validate_raw import RULE_VERSION as VALIDATION_RULE_VERSION
 
 RULE_VERSION = "order_totals_v1"
 

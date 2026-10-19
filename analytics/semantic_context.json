@@ -1,0 +1,220 @@
+{
+  "version": 1,
+  "dialect": "postgres",
+  "allowed_schema": "zepic_analytics",
+  "default_timezone": "UTC",
+  "query_contract": {
+    "statement_type": "select",
+    "maximum_statements": 1,
+    "allow_ctes": true,
+    "allow_window_functions": true,
+    "allow_database_writes": false,
+    "allow_cross_schema_access": false
+  },
+  "business_defaults": {
+    "order_value": "Sum fct_orders.order_total_amount once per order. Unless the user specifies a status, include all current order statuses and label the result booked order value, not recognized revenue.",
+    "order_count": "Count rows or distinct order_id in fct_orders once per order.",
+    "ordered_units": "Sum fct_orders.unit_count once per order, or fct_order_lines.quantity when grouping by product. Do not sum unit_count after joining orders to order lines.",
+    "order_date": "Use fct_orders.order_date or fct_order_lines.order_date for order-created-date analysis.",
+    "current_inventory": "Use current_inventory only for the latest available balance. It is not a daily inventory snapshot.",
+    "production_variance": "Use fct_production_runs.quantity_variance, defined as actual_quantity minus planned_quantity."
+  },
+  "global_limitations": [
+    "The source is current-state incremental extraction, not CDC. State transitions completed between extractions may not have been observed.",
+    "A false lifecycle_fully_observed value means the warehouse did not observe every lifecycle state; it does not mean a business event never happened.",
+    "Do not calculate or claim a complete pending-to-confirmed-to-shipped funnel from observed lifecycle flags.",
+    "current_inventory contains one current row per product and cannot support historical inventory trends.",
+    "fct_maintenance can legitimately be empty because maintenance simulation has not been introduced.",
+    "The retained business data uses simulated 2026 dates. Do not silently replace a user's date range with the current calendar date."
+  ],
+  "tables": {
+    "dim_customers": {
+      "grain": "one row per current customer",
+      "description": "Current customer attributes.",
+      "primary_key": ["customer_id"],
+      "columns": [
+        "customer_id",
+        "customer_name",
+        "customer_tier",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "dim_products": {
+      "grain": "one row per current product",
+      "description": "Current product catalog attributes. current_unit_price is a catalog price; use order-line unit_price for transactional product sales analysis.",
+      "primary_key": ["product_id"],
+      "columns": [
+        "product_id",
+        "sku",
+        "product_name",
+        "current_unit_price",
+        "batch_multiple",
+        "is_active",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "dim_machines": {
+      "grain": "one row per current machine",
+      "description": "Current machine attributes and status.",
+      "primary_key": ["machine_id"],
+      "columns": [
+        "machine_id",
+        "machine_code",
+        "machine_name",
+        "machine_status",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "fct_orders": {
+      "grain": "one row per current valid order",
+      "description": "Current order header with line aggregates and only the lifecycle milestones observed by extraction.",
+      "primary_key": ["order_id"],
+      "default_time_column": "order_date",
+      "columns": [
+        "order_id",
+        "customer_id",
+        "order_status",
+        "order_total_amount",
+        "line_count",
+        "unit_count",
+        "calculated_line_amount",
+        "order_created_at",
+        "order_date",
+        "pending_at",
+        "confirmed_at",
+        "shipped_at",
+        "pending_status_observed",
+        "confirmed_status_observed",
+        "shipped_status_observed",
+        "lifecycle_fully_observed",
+        "minutes_to_confirmation",
+        "minutes_to_shipment",
+        "minutes_confirmation_to_shipment",
+        "order_last_updated_at",
+        "raw_batch_id"
+      ]
+    },
+    "fct_order_lines": {
+      "grain": "one row per order item",
+      "description": "Order-line facts using the price captured when the order was created and the order's current status.",
+      "primary_key": ["order_item_id"],
+      "default_time_column": "order_date",
+      "columns": [
+        "order_item_id",
+        "order_id",
+        "customer_id",
+        "product_id",
+        "order_status",
+        "order_created_at",
+        "order_date",
+        "order_last_updated_at",
+        "quantity",
+        "unit_price",
+        "line_amount"
+      ]
+    },
+    "fct_production_runs": {
+      "grain": "one row per production run",
+      "description": "Production execution enriched with its linked production plan.",
+      "primary_key": ["production_run_id"],
+      "default_time_column": "planned_start_date",
+      "columns": [
+        "production_run_id",
+        "production_order_id",
+        "product_id",
+        "machine_id",
+        "planned_start_date",
+        "shortage_quantity",
+        "batch_multiple",
+        "buffer_rate",
+        "planned_quantity",
+        "actual_quantity",
+        "production_order_status",
+        "production_run_status",
+        "start_time",
+        "end_time",
+        "run_duration_minutes",
+        "quantity_variance"
+      ]
+    },
+    "fct_maintenance": {
+      "grain": "one row per maintenance record",
+      "description": "Maintenance facts. This relation can be empty at the current project checkpoint.",
+      "primary_key": ["maintenance_record_id"],
+      "default_time_column": "start_time",
+      "columns": [
+        "maintenance_record_id",
+        "machine_id",
+        "maintenance_type",
+        "maintenance_status",
+        "issue_description",
+        "start_time",
+        "end_time",
+        "maintenance_cost",
+        "maintenance_duration_minutes",
+        "created_at",
+        "updated_at"
+      ]
+    },
+    "current_inventory": {
+      "grain": "one row per current product inventory balance",
+      "description": "Latest inventory balance and catalog-price retail valuation; not inventory history.",
+      "primary_key": ["product_id"],
+      "columns": [
+        "product_id",
+        "sku",
+        "product_name",
+        "available_quantity",
+        "current_unit_price",
+        "inventory_retail_value",
+        "inventory_updated_at"
+      ]
+    }
+  },
+  "relationships": [
+    {
+      "from": "fct_orders.customer_id",
+      "to": "dim_customers.customer_id",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "fct_order_lines.order_id",
+      "to": "fct_orders.order_id",
+      "cardinality": "many-to-one",
+      "warning": "Joining order headers to lines repeats header measures. Aggregate order_total_amount and unit_count before this join or use line-grain measures."
+    },
+    {
+      "from": "fct_order_lines.customer_id",
+      "to": "dim_customers.customer_id",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "fct_order_lines.product_id",
+      "to": "dim_products.product_id",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "fct_production_runs.product_id",
+      "to": "dim_products.product_id",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "fct_production_runs.machine_id",
+      "to": "dim_machines.machine_id",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "fct_maintenance.machine_id",
+      "to": "dim_machines.machine_id",
+      "cardinality": "many-to-one"
+    },
+    {
+      "from": "current_inventory.product_id",
+      "to": "dim_products.product_id",
+      "cardinality": "one-to-one"
+    }
+  ]
+}

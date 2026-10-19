@@ -26,14 +26,14 @@ class OrchestrationContractTests(unittest.TestCase):
             self.assertIn("--skip-schema-init", command)
 
     def test_start_initializes_raw_schema_before_parallel_extraction(self):
-        self.assertEqual(START_COMMAND, "python scripts/extract_to_raw.py --init-only")
+        self.assertEqual(START_COMMAND, "python scripts/etl/extract_to_raw.py --init-only")
 
     def test_quality_steps_are_strict_before_warehouse_build(self):
         self.assertIn("--fail-on-findings", VALIDATE_COMMAND)
         self.assertIn("--fail-on-findings", RECONCILE_COMMAND)
         self.assertIn(CONTROLLED_RECONCILIATION_FAILURE_SENTINEL, RECONCILE_COMMAND)
         self.assertIn("simulated order-total mismatch", RECONCILE_COMMAND)
-        self.assertEqual(WAREHOUSE_COMMAND, "python scripts/run_warehouse.py build")
+        self.assertEqual(WAREHOUSE_COMMAND, "python scripts/etl/run_warehouse.py build")
 
     def test_dag_file_is_valid_python(self):
         dag_path = ROOT / "orchestration/dags/zepic_pipeline.py"

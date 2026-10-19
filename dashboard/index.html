@@ -1,0 +1,300 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta
+      name="description"
+      content="Zepic's governed natural-language analytics workspace."
+    />
+    <title>Zepic Analytics</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <a class="brand" href="/dashboard/" aria-label="Zepic analytics home">
+          <span class="brand-mark" aria-hidden="true">
+            <span></span><span></span><span></span>
+          </span>
+          <span>
+            <strong>ZEPIC</strong>
+            <small>Analytics workspace</small>
+          </span>
+        </a>
+
+        <nav class="primary-nav" aria-label="Primary navigation">
+          <button class="primary-nav__item is-active" type="button" data-view-target="overview">Overview</button>
+          <button class="primary-nav__item" type="button" data-view-target="ask">Ask data</button>
+          <button class="primary-nav__item primary-nav__item--future" type="button" disabled>Analysis tasks <span>Later</span></button>
+        </nav>
+
+        <div class="system-status" aria-live="polite">
+          <span id="healthDot" class="status-dot status-dot--checking"></span>
+          <span id="healthLabel">Checking service</span>
+          <span class="status-divider"></span>
+          <span>Gold · read only</span>
+        </div>
+      </header>
+
+      <main>
+        <section id="overviewView" class="overview-view">
+          <div class="overview-head">
+            <div>
+              <div class="eyebrow">Business overview · Gold layer</div>
+              <h1>Operating snapshot</h1>
+              <p>Orders, fulfilment, production and current inventory from deterministic read-only queries.</p>
+            </div>
+            <div class="as-of"><span>Data scope</span><strong>Current warehouse checkpoint</strong><small id="dashboardTimestamp">Loading…</small></div>
+          </div>
+
+          <section class="kpi-strip" aria-label="Current business snapshot">
+            <article>
+              <span>Booked order value</span>
+              <strong id="kpiOrderValue">—</strong>
+              <small>Current Gold order facts</small>
+            </article>
+            <article>
+              <span>Total orders</span>
+              <strong id="kpiOrders">—</strong>
+              <small>One row per order</small>
+            </article>
+            <article>
+              <span>Produced units</span>
+              <strong id="kpiProduced">—</strong>
+              <small>Completed production runs</small>
+            </article>
+            <article>
+              <span>Current inventory</span>
+              <strong id="kpiInventory">—</strong>
+              <small>Latest balance, not history</small>
+            </article>
+          </section>
+
+          <div class="dashboard-grid">
+            <section class="dashboard-card dashboard-card--wide">
+              <div class="dashboard-card__head">
+                <div><span class="section-label">Orders</span><h2>Booked value by day</h2></div>
+                <div class="legend"><span class="legend-dot legend-dot--mint"></span>Value <span class="legend-line"></span>Orders</div>
+              </div>
+              <div id="orderTrendChart" class="line-chart" aria-label="Daily booked order value chart"></div>
+            </section>
+
+            <section class="dashboard-card">
+              <div class="dashboard-card__head">
+                <div><span class="section-label">Fulfilment</span><h2>Order status</h2></div>
+              </div>
+              <div id="statusChart" class="status-chart" aria-label="Order status distribution"></div>
+            </section>
+
+            <section class="dashboard-card dashboard-card--wide">
+              <div class="dashboard-card__head">
+                <div><span class="section-label">Production</span><h2>Plan vs actual</h2></div>
+                <div class="legend"><span class="legend-dot legend-dot--amber"></span>Planned <span class="legend-dot legend-dot--mint"></span>Actual</div>
+              </div>
+              <div id="productionChart" class="production-chart" aria-label="Planned and actual production chart"></div>
+            </section>
+
+            <section class="dashboard-card">
+              <div class="dashboard-card__head">
+                <div><span class="section-label">Inventory</span><h2>Lowest stock</h2></div>
+                <span class="snapshot-badge">Current only</span>
+              </div>
+              <div class="table-wrap dashboard-table-wrap">
+                <table id="inventoryTable"></table>
+              </div>
+            </section>
+          </div>
+          <div id="dashboardError" class="dashboard-error is-hidden" role="alert">
+            Dashboard data could not be loaded. Check the local database service and retry.
+          </div>
+        </section>
+
+        <div id="askView" class="is-hidden">
+        <section class="hero" aria-labelledby="pageTitle">
+          <div class="eyebrow">Governed analytics · Level 1</div>
+          <div class="hero-grid">
+            <div>
+              <h1 id="pageTitle">Ask the business.<br />Inspect the evidence.</h1>
+              <p>
+                One question becomes one guarded SQL query. Every answer keeps
+                its source, limits, and execution trail attached.
+              </p>
+            </div>
+            <aside class="scope-card" aria-label="Current analytics boundary">
+              <div class="scope-card__head">
+                <span>Current contract</span>
+                <span class="level-badge">L1</span>
+              </div>
+              <dl>
+                <div><dt>Execution</dt><dd>Single bounded run</dd></div>
+                <div><dt>Data surface</dt><dd>Approved Gold models</dd></div>
+                <div><dt>Database</dt><dd>Read-only role</dd></div>
+              </dl>
+            </aside>
+          </div>
+        </section>
+
+        <section class="workspace" aria-label="Analytics query workspace">
+          <div class="mode-switch" role="tablist" aria-label="Analysis mode">
+            <button class="mode-tab is-active" role="tab" aria-selected="true">
+              <span class="mode-icon">01</span>
+              <span><strong>Quick answer</strong><small>One question · one query</small></span>
+            </button>
+            <button
+              class="mode-tab mode-tab--future"
+              role="tab"
+              aria-selected="false"
+              disabled
+              title="Available after the Level 1 analytics loop is complete"
+            >
+              <span class="mode-icon">02</span>
+              <span><strong>Analysis task</strong><small>Bounded agent · planned</small></span>
+              <span class="soon-badge">Next</span>
+            </button>
+          </div>
+
+          <div class="workspace-grid">
+            <section class="query-panel">
+              <form id="queryForm">
+                <label for="question">Business question</label>
+                <div class="question-box">
+                  <textarea
+                    id="question"
+                    name="question"
+                    rows="4"
+                    maxlength="2000"
+                    placeholder="e.g. Which order date had the highest booked order value?"
+                    required
+                  ></textarea>
+                  <div class="question-actions">
+                    <span><kbd>⌘</kbd><span>+</span><kbd>↵</kbd> to run</span>
+                    <button id="submitButton" class="run-button" type="submit">
+                      <span>Run analysis</span>
+                      <svg viewBox="0 0 20 20" aria-hidden="true">
+                        <path d="M4 10h11M11 5l5 5-5 5" />
+                      </svg>
+                    </button>
+                  </div>
+                </div>
+              </form>
+
+              <div class="suggestions" aria-label="Suggested questions">
+                <span>Try a question</span>
+                <div class="suggestion-list">
+                  <button type="button" data-question="总共有多少订单，订单总金额是多少？">
+                    Total orders and value
+                  </button>
+                  <button type="button" data-question="按订单日期汇总每日订单数和订单金额。">
+                    Daily order trend
+                  </button>
+                  <button type="button" data-question="按产品统计已订购数量，并列出前五名。">
+                    Top products by units
+                  </button>
+                  <button type="button" data-question="当前每种产品的库存数量是多少？">
+                    Current inventory
+                  </button>
+                </div>
+              </div>
+            </section>
+
+            <aside class="run-panel" aria-labelledby="runTitle">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">Run trace</span>
+                  <h2 id="runTitle">Bounded execution</h2>
+                </div>
+                <span id="runStatus" class="run-status">Ready</span>
+              </div>
+              <ol id="runSteps" class="run-steps">
+                <li data-step="interpret"><span>1</span><div><strong>Interpret question</strong><small>Use declared business semantics</small></div></li>
+                <li data-step="guard"><span>2</span><div><strong>Validate SQL</strong><small>Allowlisted, read-only Gold access</small></div></li>
+                <li data-step="query"><span>3</span><div><strong>Query evidence</strong><small>Timeout and row cap enforced</small></div></li>
+                <li data-step="answer"><span>4</span><div><strong>Explain result</strong><small>Answer only from returned rows</small></div></li>
+              </ol>
+              <p class="future-note">
+                This trace is intentionally shaped for a future bounded agent:
+                explicit steps, visible evidence, and approval-ready boundaries.
+                No autonomous planning runs in Level 1.
+              </p>
+            </aside>
+          </div>
+        </section>
+
+        <section id="resultSection" class="results is-hidden" aria-live="polite">
+          <div class="answer-card">
+            <div class="answer-card__meta">
+              <span class="section-label">Grounded answer</span>
+              <span id="resultTime"></span>
+            </div>
+            <p id="answerText"></p>
+            <div id="metricStrip" class="metric-strip"></div>
+          </div>
+
+          <div class="evidence-grid">
+            <section class="evidence-card evidence-card--wide">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">Query result</span>
+                  <h2>Evidence rows</h2>
+                </div>
+                <div class="result-badges">
+                  <span id="rowBadge"></span>
+                  <span id="elapsedBadge"></span>
+                  <span id="modelBadge"></span>
+                  <span id="requestBadge"></span>
+                </div>
+              </div>
+              <div id="chart" class="chart is-hidden" aria-label="Result chart"></div>
+              <div class="table-wrap">
+                <table id="resultTable"></table>
+              </div>
+            </section>
+
+            <section class="evidence-card">
+              <div class="panel-heading">
+                <div>
+                  <span class="section-label">Audit trail</span>
+                  <h2>Generated SQL</h2>
+                </div>
+                <button id="copySql" class="text-button" type="button">Copy</button>
+              </div>
+              <pre><code id="sqlText"></code></pre>
+              <div class="source-block">
+                <span>Source models</span>
+                <div id="sourceModels" class="source-list"></div>
+              </div>
+            </section>
+          </div>
+
+          <details class="limitations">
+            <summary>Data scope and limitations <span id="limitationCount"></span></summary>
+            <ul id="limitationList"></ul>
+          </details>
+        </section>
+
+        <section id="emptyState" class="empty-state">
+          <div class="empty-state__graphic" aria-hidden="true">
+            <span></span><span></span><span></span><span></span>
+          </div>
+          <div>
+            <strong>Your evidence will appear here</strong>
+            <p>Results are replaced on each run. Questions are independent, not a conversation.</p>
+          </div>
+        </section>
+
+        <section id="errorPanel" class="error-panel is-hidden" role="alert">
+          <span aria-hidden="true">!</span>
+          <div><strong>Analysis could not run</strong><p id="errorText"></p></div>
+        </section>
+        </div>
+      </main>
+
+      <footer>
+        <span>Zepic data platform</span>
+        <span>Level 1 · governed natural-language analytics</span>
+      </footer>
+    </div>
+    <script src="./app.js" defer></script>
+  </body>
+</html>

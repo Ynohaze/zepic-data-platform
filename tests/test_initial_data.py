@@ -3,7 +3,7 @@ import json
 from pathlib import Path
 import unittest
 
-from scripts.generate_initial_data import build_data
+from scripts.etl.generate_initial_data import build_data
 
 
 class InitialDataTests(unittest.TestCase):

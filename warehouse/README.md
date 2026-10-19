@@ -33,19 +33,19 @@ Install dependencies, validate every raw batch, and then build the warehouse:
 
 ```sh
 .venv/bin/python -m pip install -r requirements.txt
-.venv/bin/python scripts/validate_raw.py
-.venv/bin/python scripts/reconcile_order_totals.py
-.venv/bin/python scripts/run_warehouse.py build
+.venv/bin/python scripts/etl/validate_raw.py
+.venv/bin/python scripts/etl/reconcile_order_totals.py
+.venv/bin/python scripts/etl/run_warehouse.py build
 ```
 
 The wrapper loads PostgreSQL settings from the ignored root `.env` file and uses
 the committed environment-variable profile. Other dbt commands work the same way:
 
 ```sh
-.venv/bin/python scripts/run_warehouse.py debug
-.venv/bin/python scripts/run_warehouse.py test
-.venv/bin/python scripts/run_warehouse.py docs generate
-.venv/bin/python scripts/run_warehouse.py docs serve
+.venv/bin/python scripts/etl/run_warehouse.py debug
+.venv/bin/python scripts/etl/run_warehouse.py test
+.venv/bin/python scripts/etl/run_warehouse.py docs generate
+.venv/bin/python scripts/etl/run_warehouse.py docs serve
 ```
 
 The transformation is code-first. `docs generate` produces an interactive dbt

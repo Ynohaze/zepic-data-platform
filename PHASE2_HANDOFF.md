@@ -44,15 +44,15 @@
 | `config/initial_data.json` | seed、初始时间、客户等级数量、产品目录、机器和库存参数 |
 | `config/daily_operations.json` | 每日订单参数及首次模拟日期 |
 | `config/production.json` | 生产 buffer、seed、运行时长 |
-| `scripts/generate_initial_data.py` | 仅空库初始化；默认预览，`--apply` 写入 |
-| `scripts/generate_daily_operations.py` | 单日订单生成与确认 |
-| `scripts/run_production_planning.py` | 单日生产、入库与整单发货 |
-| `scripts/run_simulation.py` | 多日编排，每天一个外层事务，支持 `--resume` |
+| `scripts/etl/generate_initial_data.py` | 仅空库初始化；默认预览，`--apply` 写入 |
+| `scripts/etl/generate_daily_operations.py` | 单日订单生成与确认 |
+| `scripts/etl/run_production_planning.py` | 单日生产、入库与整单发货 |
+| `scripts/etl/run_simulation.py` | 多日编排，每天一个外层事务，支持 `--resume` |
 | `src/source_api.py` | FastAPI 只读源 API；全部 9 张 operational 表 |
-| `scripts/extract_to_raw.py` | HTTP 分页抽取；raw batch 与逐表 watermark 原子提交 |
+| `scripts/etl/extract_to_raw.py` | HTTP 分页抽取；raw batch 与逐表 watermark 原子提交 |
 | `database/raw_schema.sql` | `zepic_raw` raw 记录、批次与 watermark 表 |
 | `database/quality_schema.sql` | 版本化质量运行、quarantine findings 及查询视图 |
-| `scripts/validate_raw.py` | v1 行级质量规则、隔离 findings、幂等运行 |
+| `scripts/etl/validate_raw.py` | v1 行级质量规则、隔离 findings、幂等运行 |
 | `tests/` | 单元测试与独立临时 PostgreSQL 库集成测试 |
 | `PROJECT_HANDOFF.md` | 详细历史决策/验收记录；较早章节不是当前数据库状态 |
 
@@ -156,7 +156,7 @@ Feb 2 增量/空批次。当前 raw 共 14,873 行；maintenance 的 watermark �
 ## 7. Phase 3 raw 质量检查与订单对账
 
 用户选择质量异常行隔离后继续推进既有 source watermark。已新增
-`database/quality_schema.sql` 和 `scripts/validate_raw.py`：按 batch 与 rule
+`database/quality_schema.sql` 和 `scripts/etl/validate_raw.py`：按 batch 与 rule
 version 执行原子、幂等的校验运行；无效行保留在 raw，`quality_findings` 记录
 每个 rule violation。`quarantined_records` 与 `validated_records` 视图方便
 分别读取隔离和可用的 raw rows。validator 不更改 raw payload 或 watermark。
@@ -166,7 +166,7 @@ v1 行级规则覆盖源主键与 updated_at 元数据一致性、必填文本�
 batch、14,873 行：14,873 通过、0 隔离。合成集成测试验证非法枚举与表名
 错配会隔离，raw/watermark 不变，同一个 batch/rule_version 重跑不会重复写入。
 
-跨表对账由独立脚本 `scripts/reconcile_order_totals.py` 执行，前提是所有 raw
+跨表对账由独立脚本 `scripts/etl/reconcile_order_totals.py` 执行，前提是所有 raw
 batch 已有 v1 行级质量结果。它按 `source_updated_at`、再按 `batch_id` 取每个
 订单和明细的最新状态，使用 Decimal 比较订单头 `total_amount` 与明细
 `quantity * unit_price` 合计。无明细单独记录；订单头或任一当前明细已被行级
@@ -187,8 +187,8 @@ docker compose ps
 .venv/bin/python -m unittest discover -s tests -v
 # 需要 Docker/PostgreSQL 启动；会创建并自动删除独立测试库：
 ZEPIC_DB_TESTS=1 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python scripts/validate_raw.py
-.venv/bin/python scripts/reconcile_order_totals.py
+.venv/bin/python scripts/etl/validate_raw.py
+.venv/bin/python scripts/etl/reconcile_order_totals.py
 ```
 
 Docker 未运行时先启动 Docker Desktop，再 `docker compose up -d --wait`，不要删 volume。
@@ -198,7 +198,7 @@ Docker 未运行时先启动 Docker Desktop，再 `docker compose up -d --wait`�
 
 ```sh
 .venv/bin/uvicorn src.source_api:app --host 127.0.0.1 --port 8000
-.venv/bin/python scripts/extract_to_raw.py --table all
+.venv/bin/python scripts/etl/extract_to_raw.py --table all
 ```
 
 抽取前暂停模拟器。不要重复应用 2026-02-01 或 2026-02-02；下一模拟日为

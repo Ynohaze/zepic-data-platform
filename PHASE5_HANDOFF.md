@@ -141,8 +141,8 @@ operational 与 warehouse 检查点。
 - 本地运行手册：`orchestration/README.md`
 - Airflow / source API images：`orchestration/Dockerfile.airflow`、
   `orchestration/Dockerfile.source-api`
-- 严格 quality CLI：`scripts/validate_raw.py`、
-  `scripts/reconcile_order_totals.py`
+- 严格 quality CLI：`scripts/etl/validate_raw.py`、
+  `scripts/etl/reconcile_order_totals.py`
 - orchestration contract tests：`tests/test_orchestration.py`
 
 ## 明确边界与下一步

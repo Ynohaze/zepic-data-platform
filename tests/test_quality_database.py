@@ -9,8 +9,8 @@ import uuid
 
 from psycopg.types.json import Jsonb
 
-from scripts.reconcile_order_totals import reconcile_order_totals
-from scripts.validate_raw import count_latest_quarantined_records, validate_batch
+from scripts.etl.reconcile_order_totals import reconcile_order_totals
+from scripts.etl.validate_raw import count_latest_quarantined_records, validate_batch
 
 
 ROOT = Path(__file__).resolve().parents[1]

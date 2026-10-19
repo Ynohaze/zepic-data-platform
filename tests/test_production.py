@@ -2,7 +2,7 @@ from datetime import date, datetime, timezone
 from decimal import Decimal
 import unittest
 
-from scripts.run_production_planning import build_plan, planned_quantity, plan_shipments, validate_config
+from scripts.etl.run_production_planning import build_plan, planned_quantity, plan_shipments, validate_config
 
 
 class ProductionTests(unittest.TestCase):

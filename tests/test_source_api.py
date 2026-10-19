@@ -6,7 +6,7 @@ from unittest.mock import patch
 from fastapi import HTTPException
 
 from src.source_api import TABLES as API_TABLES, json_value, rows
-from scripts.extract_to_raw import TABLES as EXTRACT_TABLES
+from scripts.etl.extract_to_raw import TABLES as EXTRACT_TABLES
 
 
 class SourceApiUnitTests(unittest.TestCase):

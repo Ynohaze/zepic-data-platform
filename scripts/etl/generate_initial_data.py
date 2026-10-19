@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import random
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TABLES = (
     'customers', 'products', 'machines', 'inventory', 'orders', 'order_items',
     'production_orders', 'production_runs', 'maintenance_records',

@@ -6,8 +6,8 @@ from threading import Barrier
 import unittest
 
 import test_daily_operations_database as fixture
-from scripts.generate_daily_operations import run_day
-from scripts.run_simulation import simulate
+from scripts.etl.generate_daily_operations import run_day
+from scripts.etl.run_simulation import simulate
 
 
 @unittest.skipUnless(os.getenv('ZEPIC_DB_TESTS') == '1', 'Set ZEPIC_DB_TESTS=1 for isolated PostgreSQL tests')

@@ -1,7 +1,7 @@
 from datetime import date
 import unittest
 
-from scripts.run_simulation import dates
+from scripts.etl.run_simulation import dates
 
 
 class SimulationDatesTests(unittest.TestCase):

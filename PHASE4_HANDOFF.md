@@ -47,8 +47,8 @@ pending → confirmed → shipped 全漏斗分析。
 2026-10-16 执行：
 
 ```sh
-.venv/bin/python scripts/run_warehouse.py parse
-.venv/bin/python scripts/run_warehouse.py build
+.venv/bin/python scripts/etl/run_warehouse.py parse
+.venv/bin/python scripts/etl/run_warehouse.py build
 ```
 
 - dbt build：18 table models（10 Silver + 8 Gold）、93 data tests；
@@ -66,13 +66,13 @@ pending → confirmed → shipped 全漏斗分析。
 - Gold SQL/YAML：`warehouse/models/marts/`
 - 最新有效性选择：`warehouse/macros/latest_validated_records.sql`
 - 跨模型断言：`warehouse/tests/`
-- 运行入口：`scripts/run_warehouse.py`
+- 运行入口：`scripts/etl/run_warehouse.py`
 
 Phase 4 是 code-first，但 dbt 自带可交互 lineage/catalog 页面：
 
 ```sh
-.venv/bin/python scripts/run_warehouse.py docs generate
-.venv/bin/python scripts/run_warehouse.py docs serve
+.venv/bin/python scripts/etl/run_warehouse.py docs generate
+.venv/bin/python scripts/etl/run_warehouse.py docs serve
 ```
 
 静态入口是 `warehouse/target/index.html`。Phase 5 再增加 Airflow DAG 与运行监控

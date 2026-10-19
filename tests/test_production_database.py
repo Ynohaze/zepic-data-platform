@@ -10,8 +10,8 @@ import unittest
 import test_daily_operations_database as daily_fixture
 
 ROOT = daily_fixture.ROOT
-from scripts.generate_daily_operations import run_day
-from scripts.run_production_planning import run_cycle
+from scripts.etl.generate_daily_operations import run_day
+from scripts.etl.run_production_planning import run_cycle
 
 
 @unittest.skipUnless(os.getenv('ZEPIC_DB_TESTS') == '1', 'Set ZEPIC_DB_TESTS=1 for isolated PostgreSQL tests')

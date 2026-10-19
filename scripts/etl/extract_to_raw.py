@@ -13,7 +13,7 @@ from urllib.request import Request, urlopen
 from psycopg.types.json import Jsonb
 
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 TABLES = {
     "customers": "customer_id",
     "products": "product_id",

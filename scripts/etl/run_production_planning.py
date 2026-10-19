@@ -9,7 +9,7 @@ import os
 from pathlib import Path
 import random
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 INTEGER_MAX = 2147483647
 
 

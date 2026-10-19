@@ -15,6 +15,9 @@
     "order_value": "Sum fct_orders.order_total_amount once per order. Unless the user specifies a status, include all current order statuses and label the result booked order value, not recognized revenue.",
     "order_count": "Count rows or distinct order_id in fct_orders once per order.",
     "ordered_units": "Sum fct_orders.unit_count once per order, or fct_order_lines.quantity when grouping by product. Do not sum unit_count after joining orders to order lines.",
+    "customer_value": "Measure customer value as cumulative booked order value: sum fct_orders.order_total_amount once per order, grouped by customer_id. Do not substitute product line value for customer value.",
+    "high_value_customers": "When the user compares customers who provide more value but gives no threshold, define the high-value segment as the top quartile of customers ranked by cumulative booked order value using NTILE(4), and state this definition in the answer.",
+    "product_preference": "For popular, welcomed, or preferred products, use an explicit behavioral measure such as ordered units, distinct orders, or distinct customer reach. Total line amount measures monetary contribution and must not be presented by itself as popularity.",
     "order_date": "Use fct_orders.order_date or fct_order_lines.order_date for order-created-date analysis.",
     "current_inventory": "Use current_inventory only for the latest available balance. It is not a daily inventory snapshot.",
     "production_variance": "Use fct_production_runs.quantity_variance, defined as actual_quantity minus planned_quantity."

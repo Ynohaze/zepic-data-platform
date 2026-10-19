@@ -5,8 +5,16 @@ from decimal import Decimal
 from fastapi import HTTPException
 
 from analytics.query_engine import QueryResult
+from analytics.query_guard import QueryRejected
 from src.analytics_api import AnalysisRequest, create_app
-from tests.test_analytics_service import FakeEngine, FakeLlm
+from tests.test_analytics_service import (
+    FakeAgentLlm,
+    FakeEngine,
+    FakeLlm,
+    finish_action,
+    query_action,
+    refusal_action,
+)
 from analytics.service import AnalyticsService
 
 
@@ -47,6 +55,89 @@ class AnalyticsApiTests(unittest.TestCase):
         self.assertEqual(body["model"], "FakeLlm")
         self.assertEqual(len(body["request_id"]), 12)
         self.assertGreaterEqual(body["total_elapsed_ms"], 0)
+
+    def test_agent_returns_bounded_steps_and_aggregate_audit_fields(self):
+        llm = FakeAgentLlm([
+            query_action(
+                "SELECT COUNT(*) AS order_count FROM zepic_analytics.fct_orders",
+                "Count current orders",
+            ),
+            finish_action("The current order evidence is sufficient."),
+        ])
+        service = AnalyticsService(llm=llm, query_engine=FakeEngine())
+        app = create_app(service)
+
+        response = self.endpoint(app, "/api/agent/run")(
+            AnalysisRequest(question="Investigate current orders.")
+        )
+
+        body = response.model_dump(mode="json")
+        self.assertEqual(
+            body["answer"],
+            "The bounded evidence supports the final conclusion.",
+        )
+        self.assertEqual(body["query_count"], 1)
+        self.assertEqual(body["total_rows"], 1)
+        self.assertEqual(body["steps"][0]["objective"], "Count current orders")
+        self.assertEqual(body["steps"][0]["source_models"], ["fct_orders"])
+        self.assertEqual(body["events"][0]["event_type"], "query_planned")
+        self.assertEqual(body["events"][-1]["event_type"], "answer_synthesized")
+        self.assertEqual(
+            [event["sequence"] for event in body["events"]],
+            list(range(1, len(body["events"]) + 1)),
+        )
+        self.assertEqual(body["stop_reason"], "model_finished")
+        self.assertEqual(len(body["request_id"]), 12)
+
+    def test_agent_guard_failure_returns_visible_events(self):
+        class RejectingEngine(FakeEngine):
+            def execute(self, sql):
+                raise QueryRejected(
+                    "function_access",
+                    "Function PERCENTILE_CONT is not approved.",
+                )
+
+        llm = FakeAgentLlm([
+            query_action("SELECT first_attempt FROM zepic_analytics.fct_orders"),
+            query_action("SELECT second_attempt FROM zepic_analytics.fct_orders"),
+            query_action("SELECT third_attempt FROM zepic_analytics.fct_orders"),
+        ])
+        app = create_app(AnalyticsService(llm=llm, query_engine=RejectingEngine()))
+
+        with self.assertRaises(HTTPException) as raised:
+            self.endpoint(app, "/api/agent/run")(
+                AnalysisRequest(question="Segment valuable customers.")
+            )
+
+        self.assertEqual(raised.exception.status_code, 422)
+        events = raised.exception.detail["events"]
+        self.assertEqual(events[-1]["event_type"], "guard_rejected")
+        self.assertEqual(events[-1]["status"], "stopped")
+        self.assertEqual(
+            [event["event_type"] for event in events].count("guard_rejected"),
+            3,
+        )
+
+    def test_agent_refusal_after_evidence_returns_visible_events(self):
+        llm = FakeAgentLlm([
+            query_action(
+                "SELECT COUNT(*) AS order_count FROM zepic_analytics.fct_orders",
+                "Inspect available evidence",
+            ),
+            refusal_action("The evidence cannot support the requested cause."),
+        ])
+        app = create_app(AnalyticsService(llm=llm, query_engine=FakeEngine()))
+
+        with self.assertRaises(HTTPException) as raised:
+            self.endpoint(app, "/api/agent/run")(
+                AnalysisRequest(question="Explain the cause of order volume.")
+            )
+
+        self.assertEqual(raised.exception.status_code, 422)
+        self.assertEqual(
+            [event["event_type"] for event in raised.exception.detail["events"]],
+            ["query_planned", "query_executed", "model_refused"],
+        )
 
     def test_dashboard_summary_uses_deterministic_query_engine(self):
         class SummaryEngine:

@@ -51,6 +51,42 @@ class AnalysisResult(BaseModel):
     limitations: list[str]
 
 
+class AgentStepResult(BaseModel):
+    step_number: int
+    objective: str
+    generated_sql: str
+    source_models: list[str]
+    columns: list[str]
+    rows: list[dict[str, Any]]
+    row_count: int
+    truncated: bool
+    query_elapsed_ms: int
+
+
+class AgentEventResult(BaseModel):
+    sequence: int
+    event_type: str
+    title: str
+    detail: str
+    status: str
+
+
+class AgentAnalysisResult(BaseModel):
+    request_id: str
+    model: str
+    question: str
+    answer: str
+    steps: list[AgentStepResult]
+    events: list[AgentEventResult]
+    query_count: int
+    total_rows: int
+    total_query_elapsed_ms: int
+    total_elapsed_ms: int
+    stop_reason: str
+    result_timestamp: str
+    limitations: list[str]
+
+
 class DashboardSummary(BaseModel):
     total_orders: int
     booked_order_value: str
@@ -95,6 +131,19 @@ class DashboardOverview(BaseModel):
     low_inventory: list[InventoryPoint]
 
 
+def serialize_agent_events(events) -> list[dict[str, Any]]:
+    return [
+        {
+            "sequence": event.sequence,
+            "event_type": event.event_type,
+            "title": event.title,
+            "detail": event.detail,
+            "status": event.status,
+        }
+        for event in events
+    ]
+
+
 def build_query_engine_from_env() -> QueryEngine | None:
     required = ("POSTGRES_DB", "ANALYTICS_DB_USER", "ANALYTICS_DB_PASSWORD")
     if any(not os.getenv(name) for name in required):
@@ -122,8 +171,9 @@ def build_service_from_env(
 
     try:
         provider_timeout = int(os.getenv("GROQ_REQUEST_TIMEOUT_SECONDS", "30"))
+        max_agent_steps = int(os.getenv("ANALYTICS_AGENT_MAX_STEPS", "3"))
     except ValueError as exc:
-        raise RuntimeError("Groq request timeout must be an integer.") from exc
+        raise RuntimeError("Analytics agent and provider settings must be integers.") from exc
 
     configured_query_engine = query_engine or build_query_engine_from_env()
     if configured_query_engine is None:
@@ -134,14 +184,18 @@ def build_service_from_env(
         model=os.getenv("GROQ_MODEL", DEFAULT_MODEL),
         request_timeout_seconds=provider_timeout,
     )
-    return AnalyticsService(llm=llm, query_engine=configured_query_engine)
+    return AnalyticsService(
+        llm=llm,
+        query_engine=configured_query_engine,
+        max_agent_steps=max_agent_steps,
+    )
 
 
 def create_app(
     service: AnalyticsService | None = None,
     dashboard_query_engine: QueryEngine | None = None,
 ) -> FastAPI:
-    app = FastAPI(title="Zepic governed analytics API", version="0.1.0")
+    app = FastAPI(title="Zepic governed analytics API", version="0.2.0")
     app.state.analytics_service = service
     app.state.dashboard_query_engine = (
         dashboard_query_engine
@@ -380,6 +434,117 @@ def create_app(
             truncated=result.truncated,
             query_elapsed_ms=result.query_elapsed_ms,
             total_elapsed_ms=total_elapsed_ms,
+            result_timestamp=result.result_timestamp.isoformat(),
+            limitations=list(result.limitations),
+        )
+
+    @app.post("/api/agent/run", response_model=AgentAnalysisResult)
+    def run_agent(request: AnalysisRequest):
+        request_id = uuid4().hex[:12]
+        started_at = perf_counter()
+        configured_service = app.state.analytics_service
+        if configured_service is None:
+            raise HTTPException(
+                status_code=503,
+                detail="The analytics LLM provider is not configured.",
+            )
+
+        try:
+            result = configured_service.run_agent(request.question)
+        except InvalidQuestion as exc:
+            LOGGER.info("agent_request request_id=%s status=invalid", request_id)
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except QuestionUnsupported as exc:
+            LOGGER.info("agent_request request_id=%s status=unsupported", request_id)
+            detail: str | dict[str, Any] = str(exc)
+            if events := getattr(exc, "events", ()):
+                detail = {
+                    "code": "question_unsupported",
+                    "message": str(exc),
+                    "events": serialize_agent_events(events),
+                }
+            raise HTTPException(status_code=422, detail=detail) from exc
+        except QueryRejected as exc:
+            LOGGER.info(
+                "agent_request request_id=%s status=blocked code=%s",
+                request_id,
+                exc.code,
+            )
+            detail: dict[str, Any] = {"code": exc.code, "message": str(exc)}
+            if events := getattr(exc, "events", ()):
+                detail["events"] = serialize_agent_events(events)
+            raise HTTPException(status_code=422, detail=detail) from exc
+        except LlmProviderError as exc:
+            LOGGER.warning("agent_request request_id=%s status=provider_error", request_id)
+            raise HTTPException(
+                status_code=502,
+                detail="The configured LLM provider failed.",
+            ) from exc
+        except PsycopgError as exc:
+            LOGGER.warning("agent_request request_id=%s status=database_error", request_id)
+            raise HTTPException(
+                status_code=503,
+                detail="Analytics is temporarily unavailable.",
+            ) from exc
+
+        total_elapsed_ms = int((perf_counter() - started_at) * 1_000)
+        model_name = getattr(
+            configured_service.llm,
+            "model",
+            type(configured_service.llm).__name__,
+        )
+        total_rows = sum(step.row_count for step in result.steps)
+        total_query_elapsed_ms = sum(step.query_elapsed_ms for step in result.steps)
+        sources = sorted(
+            {source for step in result.steps for source in step.source_models}
+        )
+        LOGGER.info(
+            "agent_request request_id=%s status=success model=%s queries=%s "
+            "sources=%s rows=%s query_ms=%s total_ms=%s stop=%s",
+            request_id,
+            model_name,
+            len(result.steps),
+            ",".join(sources),
+            total_rows,
+            total_query_elapsed_ms,
+            total_elapsed_ms,
+            result.stop_reason,
+        )
+
+        return AgentAnalysisResult(
+            request_id=request_id,
+            model=model_name,
+            question=result.question,
+            answer=result.answer,
+            steps=[
+                AgentStepResult(
+                    step_number=step.step_number,
+                    objective=step.objective,
+                    generated_sql=step.generated_sql,
+                    source_models=list(step.source_models),
+                    columns=list(step.columns),
+                    rows=list(step.rows),
+                    row_count=step.row_count,
+                    truncated=step.truncated,
+                    query_elapsed_ms=step.query_elapsed_ms,
+                )
+                for step in result.steps
+            ],
+            events=[
+                AgentEventResult(
+                    sequence=event.sequence,
+                    event_type=event.event_type,
+                    title=event.title,
+                    detail=event.detail,
+                    status=event.status,
+                )
+                for event in result.events
+            ],
+            query_count=len(result.steps),
+            total_rows=total_rows,
+            total_query_elapsed_ms=total_query_elapsed_ms,
+            total_elapsed_ms=total_elapsed_ms,
+            stop_reason=result.stop_reason,
             result_timestamp=result.result_timestamp.isoformat(),
             limitations=list(result.limitations),
         )

@@ -14,6 +14,7 @@ ANALYTICS_DB_USER=zepic_analytics_reader
 ANALYTICS_DB_PASSWORD=replace_with_a_unique_local_password
 ANALYTICS_QUERY_TIMEOUT_MS=5000
 ANALYTICS_MAX_ROWS=200
+ANALYTICS_AGENT_MAX_STEPS=3
 ```
 
 After a successful warehouse build, run:
@@ -43,10 +44,18 @@ GROQ_MODEL=openai/gpt-oss-20b
 GROQ_REQUEST_TIMEOUT_SECONDS=30
 ```
 
-`GroqAnalyticsLlm` makes exactly two non-streaming calls per accepted question:
-one strict JSON Schema response proposes either a SQL query or a refusal, and a
-second strict response explains only the executed rows. Both calls use low
-reasoning effort. There is no model-controlled retry or tool loop.
+`Quick answer` makes exactly two non-streaming calls per accepted question: one
+strict JSON Schema response proposes either a SQL query or a refusal, and a
+second strict response explains only the executed rows. Both use low reasoning
+effort.
+
+`Analysis task` uses a bounded model-controlled loop. On each step the model
+must choose exactly one strict action: query, finish or refusal. Query actions
+still pass through the same SQL guard and database role. The loop permits at
+most `ANALYTICS_AGENT_MAX_STEPS` queries (three by default and never more than
+five), rejects repeated SQL, and forces a grounded synthesis when the budget is
+used. At most two rejected plans may be corrected from a guard error before the
+task stops; rejected plans are never executed and do not consume query steps.
 
 Once both the analytics database role and Groq key are configured, start the API
 from the repository root:
@@ -61,13 +70,17 @@ and low-inventory table come from fixed, guarded Gold queries and remain
 independent of the LLM. Their freshness label reports the latest order date and
 inventory update represented in Gold, rather than merely the page-load time.
 
-The `Ask data` workspace is single-turn: one question, one validated SQL
-statement, one bounded query and one grounded answer. Each successful response
-includes a request ID, model name, database time and total time. The application
-logs the same operational metadata and status without logging the question,
-result rows or credentials. All user-facing failures use one simple error panel.
-The disabled `Analysis task` mode reserves the UI boundary for a future bounded
-analytical agent without enabling planning or autonomous execution today.
+The `Ask data` workspace preserves the single-query Level 1 path. The enabled
+`Analysis task` mode can plan several evidence-gathering queries and exposes each
+planner decision, guard rejection and correction, executed query, early finish,
+model refusal and forced-convergence reason in the UI, alongside every objective, SQL
+statement, source model, row count and execution time. T0 does not add a
+verification query merely to make the trace longer; it makes the real bounded
+control flow visible and may legitimately finish after one query.
+Each successful response includes a request ID, model name, database time and
+total time. The application logs the same operational metadata and status
+without logging the question, result rows or credentials. All user-facing
+failures use one simple error panel.
 
 Without `GROQ_API_KEY`, `/health` reports `configuration_required` and the chat
 endpoint returns HTTP 503. This keeps ordinary ETL development independent of
@@ -89,9 +102,11 @@ boundary.
 ## Level 1 boundary and evaluation
 
 This is a local, single-user analytical application. It has no login,
-multi-tenant isolation, conversational memory, write capability, forecasting,
-autonomous planning or background agent loop. Do not expose it directly to an
-untrusted network without adding authentication and deployment controls.
+multi-tenant isolation, conversational memory, write capability, forecasting or
+background agent loop. The bounded agent plans only within one synchronous
+request, can call only the guarded query engine, and stops after a small fixed
+budget. Do not expose it directly to an untrusted network without adding
+authentication and deployment controls.
 
 `evaluation_cases.json` is the small acceptance contract for supported,
 unsupported and hostile questions. Its shape and coverage run with the normal

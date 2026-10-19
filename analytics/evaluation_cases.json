@@ -23,6 +23,13 @@
       "required_sources": ["fct_order_lines", "dim_products"]
     },
     {
+      "id": "high_value_customer_products",
+      "category": "supported",
+      "question": "Which products are most popular among customers who provide more value than others?",
+      "expected": "answer",
+      "required_sources": ["fct_orders", "fct_order_lines", "dim_products"]
+    },
+    {
       "id": "order_status",
       "category": "supported",
       "question": "各订单状态分别有多少订单？",

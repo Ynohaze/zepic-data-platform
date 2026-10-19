@@ -56,8 +56,8 @@ entry points; business and quality logic remains testable outside the DAG.
   tested with dbt.
 - A manual Airflow DAG with parallel extraction, bounded concurrency, retry
   policy, visible downstream blocking and task-level recovery.
-- A governed Level 1 analytics dashboard with deterministic Gold metrics,
-  single-turn natural-language questions, visible SQL and evidence metadata.
+- A governed analytics dashboard with deterministic Gold metrics, direct
+  natural-language answers and an optional bounded multi-query analysis agent.
 
 ## Current accepted checkpoint
 
@@ -136,10 +136,15 @@ docker compose up -d --wait postgres
 ```
 
 Open <http://127.0.0.1:8001/dashboard/>. The headline metrics use fixed,
-guarded SQL and do not depend on Groq. The question workspace performs one
-model proposal, one validated read-only query and one evidence-grounded answer.
-The disabled `Analysis task` mode is a design seam for a future bounded agent;
-Level 1 does not plan or run autonomous task loops.
+guarded SQL and do not depend on Groq. `Quick answer` preserves the Level 1 flow
+of one proposal, one validated read-only query and one evidence-grounded answer.
+`Analysis task` exposes the bounded agent's real decision trace, including plan,
+guard outcome, execution and the explicit reason it finished or was forced to
+converge. It may finish after one sufficient query and does not manufacture a
+verification step for display.
+`Analysis task` is a bounded agent beta: it may choose up to three guarded
+queries from prior evidence, then must finish or stop. It has no write tools,
+background execution, conversational memory or access outside approved Gold.
 
 Detailed provider, safety and recovery notes are in
 [analytics/README.md](analytics/README.md).

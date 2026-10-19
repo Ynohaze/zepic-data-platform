@@ -36,10 +36,17 @@ const elements = {
   productionChart: document.querySelector("#productionChart"),
   inventoryTable: document.querySelector("#inventoryTable"),
   dashboardError: document.querySelector("#dashboardError"),
+  modeTabs: [...document.querySelectorAll(".mode-tab[data-mode]")],
+  executionMode: document.querySelector("#executionMode"),
+  boundaryNote: document.querySelector("#boundaryNote"),
+  agentTrace: document.querySelector("#agentTrace"),
+  resultKind: document.querySelector("#resultKind"),
+  evidenceTitle: document.querySelector("#evidenceTitle"),
 };
 
 const integerFormatter = new Intl.NumberFormat(undefined, { maximumFractionDigits: 0 });
 const moneyFormatter = new Intl.NumberFormat(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+let analysisMode = "quick";
 
 function setHealth(status) {
   elements.healthDot.className = "status-dot";
@@ -227,6 +234,53 @@ function setRunState(state) {
   });
 }
 
+function selectMode(mode) {
+  analysisMode = mode === "agent" ? "agent" : "quick";
+  elements.modeTabs.forEach((tab) => {
+    const selected = tab.dataset.mode === analysisMode;
+    tab.classList.toggle("is-active", selected);
+    tab.setAttribute("aria-selected", String(selected));
+  });
+  elements.executionMode.textContent = analysisMode === "agent"
+    ? "Agent · maximum 3 queries"
+    : "Single bounded run";
+  elements.boundaryNote.textContent = analysisMode === "agent"
+    ? "Every planner decision, guard outcome and convergence reason is visible. T0 never adds a query only for show."
+    : "Quick answers execute exactly one guarded query. Switch to Analysis task when the question may need several comparisons.";
+  elements.question.placeholder = analysisMode === "agent"
+    ? "e.g. Investigate which products drive order volume and compare their current inventory."
+    : "e.g. Which order date had the highest booked order value?";
+  elements.submit.querySelector("span").textContent = analysisMode === "agent"
+    ? "Run agent"
+    : "Run analysis";
+  clearAnalysisOutput();
+  elements.error.classList.add("is-hidden");
+  elements.empty.classList.remove("is-hidden");
+  setRunState("ready");
+}
+
+function clearAnalysisOutput() {
+  elements.results.classList.add("is-hidden");
+  elements.empty.classList.add("is-hidden");
+  elements.agentTrace.classList.add("is-hidden");
+  elements.agentTrace.replaceChildren();
+  elements.answer.textContent = "";
+  elements.resultTime.textContent = "";
+  elements.metricStrip.replaceChildren();
+  elements.rowBadge.textContent = "";
+  elements.elapsedBadge.textContent = "";
+  elements.modelBadge.textContent = "";
+  elements.requestBadge.textContent = "";
+  elements.table.replaceChildren();
+  elements.chart.replaceChildren();
+  elements.chart.classList.add("is-hidden");
+  elements.sql.textContent = "";
+  elements.sources.replaceChildren();
+  elements.limitationList.replaceChildren();
+  elements.limitationCount.textContent = "";
+  elements.errorText.textContent = "";
+}
+
 function cellText(value) {
   if (value === null || value === undefined) return "—";
   if (typeof value === "boolean") return value ? "Yes" : "No";
@@ -301,6 +355,9 @@ function renderChart(columns, rows) {
 }
 
 function renderResult(data) {
+  elements.resultKind.textContent = "Grounded answer";
+  elements.evidenceTitle.textContent = "Evidence rows";
+  renderQuickTrace();
   elements.answer.textContent = data.answer;
   elements.resultTime.textContent = new Date(data.result_timestamp).toLocaleString();
   elements.rowBadge.textContent = `${data.row_count} row${data.row_count === 1 ? "" : "s"}${data.truncated ? " · capped" : ""}`;
@@ -332,6 +389,115 @@ function renderResult(data) {
   elements.results.classList.remove("is-hidden");
 }
 
+function traceItem(numberText, titleText, detailText, status = "planned") {
+  const item = document.createElement("article");
+  item.className = `agent-trace__step agent-trace__step--${status}`;
+  const number = document.createElement("span");
+  number.textContent = numberText;
+  const body = document.createElement("div");
+  const title = document.createElement("strong");
+  title.textContent = titleText;
+  const detail = document.createElement("small");
+  detail.textContent = detailText;
+  body.append(title, detail);
+  item.append(number, body);
+  return item;
+}
+
+function renderQuickTrace() {
+  elements.agentTrace.replaceChildren();
+  const heading = document.createElement("div");
+  heading.className = "agent-trace__heading";
+  heading.textContent = "Quick answer · no agent loop";
+  elements.agentTrace.append(
+    heading,
+    traceItem(
+      "1",
+      "Single governed query",
+      "Quick answer does not run the analytical Agent. Choose Analysis task to see planner events.",
+    ),
+  );
+  elements.agentTrace.classList.remove("is-hidden");
+}
+
+function renderPendingAgentTrace() {
+  elements.agentTrace.replaceChildren();
+  const heading = document.createElement("div");
+  heading.className = "agent-trace__heading";
+  heading.textContent = "Agent run · waiting for verified events";
+  elements.agentTrace.append(
+    heading,
+    traceItem(
+      "…",
+      "Bounded Agent is running",
+      "Verified planner, guard and query events will replace this status when the server responds; hidden reasoning is never displayed.",
+    ),
+  );
+  elements.agentTrace.classList.remove("is-hidden");
+}
+
+function renderAgentTrace(events, queryCount, stopReason) {
+  elements.agentTrace.replaceChildren();
+  const heading = document.createElement("div");
+  heading.className = "agent-trace__heading";
+  heading.textContent = `${queryCount} quer${queryCount === 1 ? "y" : "ies"} · ${events.length} events · ${stopReason.replaceAll("_", " ")}`;
+  elements.agentTrace.append(heading);
+  events.forEach((event) => {
+    const item = document.createElement("article");
+    item.className = `agent-trace__step agent-trace__step--${event.status}`;
+    const number = document.createElement("span");
+    number.textContent = event.sequence;
+    const body = document.createElement("div");
+    const title = document.createElement("strong");
+    title.textContent = event.title;
+    const detail = document.createElement("small");
+    detail.textContent = event.detail;
+    body.append(title, detail);
+    item.append(number, body);
+    elements.agentTrace.append(item);
+  });
+  elements.agentTrace.classList.remove("is-hidden");
+}
+
+function renderAgentResult(data) {
+  const lastStep = data.steps[data.steps.length - 1];
+  elements.resultKind.textContent = "Agent conclusion";
+  elements.evidenceTitle.textContent = "Final-step evidence";
+  elements.answer.textContent = data.answer;
+  elements.resultTime.textContent = new Date(data.result_timestamp).toLocaleString();
+  elements.rowBadge.textContent = `${data.query_count} quer${data.query_count === 1 ? "y" : "ies"} · ${data.total_rows} rows`;
+  elements.elapsedBadge.textContent = `${data.total_query_elapsed_ms} ms DB · ${data.total_elapsed_ms} ms total`;
+  elements.modelBadge.textContent = data.model;
+  elements.requestBadge.textContent = `Run ${data.request_id}`;
+  elements.sql.textContent = data.steps.map((step) => (
+    `-- Step ${step.step_number}: ${step.objective}\n${step.generated_sql}`
+  )).join("\n\n");
+
+  const sources = [...new Set(data.steps.flatMap((step) => step.source_models))];
+  elements.sources.replaceChildren();
+  sources.forEach((source) => {
+    const tag = document.createElement("span");
+    tag.textContent = source;
+    elements.sources.append(tag);
+  });
+
+  elements.limitationList.replaceChildren();
+  data.limitations.forEach((limitation) => {
+    const item = document.createElement("li");
+    item.textContent = limitation;
+    elements.limitationList.append(item);
+  });
+  elements.limitationCount.textContent = `(${data.limitations.length})`;
+
+  renderAgentTrace(data.events, data.query_count, data.stop_reason);
+  renderMetrics(lastStep.columns, lastStep.rows);
+  renderTable(lastStep.columns, lastStep.rows);
+  renderChart(lastStep.columns, lastStep.rows);
+  elements.empty.classList.add("is-hidden");
+  elements.error.classList.add("is-hidden");
+  elements.results.classList.remove("is-hidden");
+}
+
 function errorMessage(body, status) {
   const detail = body?.detail;
   if (typeof detail === "string") return detail;
@@ -341,28 +507,43 @@ function errorMessage(body, status) {
 }
 
 async function runAnalysis(question) {
+  clearAnalysisOutput();
+  if (analysisMode === "agent") renderPendingAgentTrace();
   setRunState("running");
   elements.submit.disabled = true;
   elements.submit.querySelector("span").textContent = "Running…";
   elements.error.classList.add("is-hidden");
 
   try {
-    const response = await fetch("/api/chat/query", {
+    const response = await fetch(analysisMode === "agent" ? "/api/agent/run" : "/api/chat/query", {
       method: "POST",
       headers: { "Content-Type": "application/json", Accept: "application/json" },
       body: JSON.stringify({ question }),
     });
     const body = await response.json();
-    if (!response.ok) throw new Error(errorMessage(body, response.status));
-    renderResult(body);
+    if (!response.ok) {
+      const runError = new Error(errorMessage(body, response.status));
+      runError.events = body?.detail?.events || [];
+      throw runError;
+    }
+    if (analysisMode === "agent") renderAgentResult(body);
+    else renderResult(body);
     setRunState("complete");
   } catch (error) {
+    clearAnalysisOutput();
+    if (analysisMode === "agent" && error.events?.length) {
+      const executedQueries = error.events.filter((event) => event.event_type === "query_executed").length;
+      renderAgentTrace(error.events, executedQueries, "stopped");
+    }
     elements.errorText.textContent = error.message;
     elements.error.classList.remove("is-hidden");
+    elements.error.scrollIntoView({ behavior: "smooth", block: "center" });
     setRunState("error");
   } finally {
     elements.submit.disabled = false;
-    elements.submit.querySelector("span").textContent = "Run analysis";
+    elements.submit.querySelector("span").textContent = analysisMode === "agent"
+      ? "Run agent"
+      : "Run analysis";
   }
 }
 
@@ -394,8 +575,15 @@ document.querySelectorAll("[data-view-target]").forEach((button) => {
     document.querySelectorAll("[data-view-target]").forEach((item) => {
       item.classList.toggle("is-active", item === button);
     });
-    if (target === "ask") elements.question.focus();
+    if (target === "ask") {
+      if (button.dataset.mode) selectMode(button.dataset.mode);
+      elements.question.focus();
+    }
   });
+});
+
+elements.modeTabs.forEach((tab) => {
+  tab.addEventListener("click", () => selectMode(tab.dataset.mode));
 });
 
 elements.copySql.addEventListener("click", async () => {

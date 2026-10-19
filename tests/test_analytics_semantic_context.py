@@ -67,6 +67,12 @@ class AnalyticsSemanticContextTests(unittest.TestCase):
         self.assertIn("inventory trends", limitations)
         self.assertIn("lifecycle", limitations)
 
+    def test_customer_value_and_product_preference_defaults_are_explicit(self):
+        defaults = self.context["business_defaults"]
+        self.assertIn("order_total_amount", defaults["customer_value"])
+        self.assertIn("top quartile", defaults["high_value_customers"])
+        self.assertIn("not be presented by itself", defaults["product_preference"])
+
 
 if __name__ == "__main__":
     unittest.main()

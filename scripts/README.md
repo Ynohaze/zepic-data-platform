@@ -55,3 +55,7 @@ used by the AI query service. It removes direct privileges across user schemas,
 grants read-only access to `zepic_analytics`, and configures read-only transaction,
 timeout and search-path defaults. It must run with the administrative database
 settings from `.env`; the application itself uses the separate analytics login.
+
+`ai/run_agent_acceptance.py` runs one live bounded analysis task through Groq
+and the read-only database, then prints only query count, stop reason and Gold
+source names. It is a manual acceptance check and consumes provider quota.

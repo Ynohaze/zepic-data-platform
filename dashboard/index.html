@@ -25,8 +25,8 @@
 
         <nav class="primary-nav" aria-label="Primary navigation">
           <button class="primary-nav__item is-active" type="button" data-view-target="overview">Overview</button>
-          <button class="primary-nav__item" type="button" data-view-target="ask">Ask data</button>
-          <button class="primary-nav__item primary-nav__item--future" type="button" disabled>Analysis tasks <span>Later</span></button>
+          <button class="primary-nav__item" type="button" data-view-target="ask" data-mode="quick">Ask data</button>
+          <button class="primary-nav__item" type="button" data-view-target="ask" data-mode="agent">Analysis tasks <span>Agent</span></button>
         </nav>
 
         <div class="system-status" aria-live="polite">
@@ -112,22 +112,22 @@
 
         <div id="askView" class="is-hidden">
         <section class="hero" aria-labelledby="pageTitle">
-          <div class="eyebrow">Governed analytics · Level 1</div>
+          <div class="eyebrow">Governed analytics · Agent beta</div>
           <div class="hero-grid">
             <div>
               <h1 id="pageTitle">Ask the business.<br />Inspect the evidence.</h1>
               <p>
-                One question becomes one guarded SQL query. Every answer keeps
-                its source, limits, and execution trail attached.
+                Choose a direct answer or let a bounded agent investigate in a
+                few guarded steps. Every answer keeps its evidence attached.
               </p>
             </div>
             <aside class="scope-card" aria-label="Current analytics boundary">
               <div class="scope-card__head">
                 <span>Current contract</span>
-                <span class="level-badge">L1</span>
+                <span class="level-badge">L1+</span>
               </div>
               <dl>
-                <div><dt>Execution</dt><dd>Single bounded run</dd></div>
+                <div><dt>Execution</dt><dd id="executionMode">Single bounded run</dd></div>
                 <div><dt>Data surface</dt><dd>Approved Gold models</dd></div>
                 <div><dt>Database</dt><dd>Read-only role</dd></div>
               </dl>
@@ -137,22 +137,26 @@
 
         <section class="workspace" aria-label="Analytics query workspace">
           <div class="mode-switch" role="tablist" aria-label="Analysis mode">
-            <button class="mode-tab is-active" role="tab" aria-selected="true">
+            <button class="mode-tab is-active" role="tab" aria-selected="true" data-mode="quick">
               <span class="mode-icon">01</span>
               <span><strong>Quick answer</strong><small>One question · one query</small></span>
             </button>
             <button
-              class="mode-tab mode-tab--future"
+              class="mode-tab"
               role="tab"
               aria-selected="false"
-              disabled
-              title="Available after the Level 1 analytics loop is complete"
+              data-mode="agent"
             >
               <span class="mode-icon">02</span>
-              <span><strong>Analysis task</strong><small>Bounded agent · planned</small></span>
-              <span class="soon-badge">Next</span>
+              <span><strong>Analysis task</strong><small>Up to 3 guarded queries</small></span>
+              <span class="soon-badge">Beta</span>
             </button>
           </div>
+
+          <section id="errorPanel" class="error-panel is-hidden" role="alert">
+            <span aria-hidden="true">!</span>
+            <div><strong>Analysis could not run</strong><p id="errorText"></p></div>
+          </section>
 
           <div class="workspace-grid">
             <section class="query-panel">
@@ -212,10 +216,11 @@
                 <li data-step="query"><span>3</span><div><strong>Query evidence</strong><small>Timeout and row cap enforced</small></div></li>
                 <li data-step="answer"><span>4</span><div><strong>Explain result</strong><small>Answer only from returned rows</small></div></li>
               </ol>
-              <p class="future-note">
-                This trace is intentionally shaped for a future bounded agent:
-                explicit steps, visible evidence, and approval-ready boundaries.
-                No autonomous planning runs in Level 1.
+              <div id="agentTrace" class="agent-trace is-hidden" aria-live="polite"></div>
+              <p id="boundaryNote" class="future-note">
+                Quick answers execute exactly one guarded query. Switch to
+                Analysis task to see every planner decision, guard outcome and
+                convergence reason. T0 never adds a query only for show.
               </p>
             </aside>
           </div>
@@ -224,7 +229,7 @@
         <section id="resultSection" class="results is-hidden" aria-live="polite">
           <div class="answer-card">
             <div class="answer-card__meta">
-              <span class="section-label">Grounded answer</span>
+              <span id="resultKind" class="section-label">Grounded answer</span>
               <span id="resultTime"></span>
             </div>
             <p id="answerText"></p>
@@ -236,7 +241,7 @@
               <div class="panel-heading">
                 <div>
                   <span class="section-label">Query result</span>
-                  <h2>Evidence rows</h2>
+                  <h2 id="evidenceTitle">Evidence rows</h2>
                 </div>
                 <div class="result-badges">
                   <span id="rowBadge"></span>
@@ -279,20 +284,16 @@
           </div>
           <div>
             <strong>Your evidence will appear here</strong>
-            <p>Results are replaced on each run. Questions are independent, not a conversation.</p>
+            <p>Each run is independent. Agent tasks stop after three guarded queries.</p>
           </div>
         </section>
 
-        <section id="errorPanel" class="error-panel is-hidden" role="alert">
-          <span aria-hidden="true">!</span>
-          <div><strong>Analysis could not run</strong><p id="errorText"></p></div>
-        </section>
         </div>
       </main>
 
       <footer>
         <span>Zepic data platform</span>
-        <span>Level 1 · governed natural-language analytics</span>
+        <span>Governed analytics · bounded agent beta</span>
       </footer>
     </div>
     <script src="./app.js" defer></script>

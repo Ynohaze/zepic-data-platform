@@ -31,6 +31,7 @@ ALLOWED_FUNCTIONS = {
     "MAX",
     "MIN",
     "NULLIF",
+    "NTILE",
     "RANK",
     "ROUND",
     "ROW_NUMBER",

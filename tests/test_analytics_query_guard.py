@@ -47,6 +47,18 @@ class AnalyticsQueryGuardTests(unittest.TestCase):
             ("dim_products", "fct_order_lines"),
         )
 
+    def test_accepts_ntile_for_bounded_customer_segmentation(self):
+        result = self.guard.validate(
+            """
+            SELECT customer_id,
+                   NTILE(4) OVER (ORDER BY SUM(order_total_amount) DESC) AS value_quartile
+            FROM zepic_analytics.fct_orders
+            GROUP BY customer_id
+            """
+        )
+
+        self.assertEqual(result.source_models, ("fct_orders",))
+
     def test_accepts_read_only_case_expression(self):
         result = self.guard.validate(
             """

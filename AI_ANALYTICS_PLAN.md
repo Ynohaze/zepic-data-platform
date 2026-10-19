@@ -117,11 +117,15 @@ Acceptance: the deterministic dashboard still works if the LLM is unavailable,
 and the chat makes uncertainty and refusals visible rather than inventing an
 answer.
 
-The Level 1 UI reserves, but does not implement, a future `Analysis task` mode.
-Its reusable seams are the explicit run-state indicator, ordered execution
-steps, evidence surface and approval-ready boundary. Until Level 1 is closed,
-that mode remains disabled: there is no task decomposition, autonomous loop,
-background execution, model retry policy or additional tool authority.
+The original Level 1 UI reserved a future `Analysis task` mode. After the Level
+1 checkpoint, that seam is enabled as a bounded beta: the model may select up to
+three sequential Gold queries, each validated and executed through the existing
+read-only controls. It can finish early or refuse, repeated SQL is blocked, and
+all planner actions and execution outcomes are returned as a visible event trace. Rejected SQL is
+shown as unexecuted, corrections are explicit, and reaching the query budget
+produces a visible forced-convergence reason. T0 does not proactively add a
+verification query solely to lengthen the workflow. This does not add background execution,
+write tools, conversational memory or an unrestricted tool loop.
 
 ### Phase 5 — evaluation and failure hardening
 
